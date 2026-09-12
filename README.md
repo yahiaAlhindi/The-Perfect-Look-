@@ -1,6 +1,7 @@
 # The-Perfect-Look-
 
-Patient booking application for The Perfect Look clinic.
+Multi-branch health, beauty, booking, payments, and wellness platform for
+The Perfect Look clinic.
 
 | Path        | Purpose                                              |
 | ----------- | ---------------------------------------------------- |
@@ -33,6 +34,7 @@ commit real keys; the complete reference is `.env.example`.
 
 ## Docs
 
+- [Software requirements specification](docs/The_Perfect_Look_App_Requirements_UPDATED.md)
 - [Task plan](docs/PROJECT_TASKS_BREAKDOWN.md)
 - [Branch & PR conventions](docs/WORKFLOW.md)
 - [Deployment pipeline](docs/DEPLOYMENT.md)

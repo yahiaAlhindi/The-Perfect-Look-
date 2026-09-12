@@ -1,52 +1,61 @@
-# Workflow & Branch Conventions
+# Workflow and Branch Conventions
 
-Applies to every task in the MVP breakdown (`docs/PROJECT_TASKS_BREAKDOWN.md`, §3).
+This workflow applies to the tasks in
+docs/PROJECT_TASKS_BREAKDOWN.md (SRS v2).
 
 ## Rules
 
-1. **One task = one thread.** Each task is worked in its own chat thread.
-2. **Branch per task.** Branch name: `task/TXX-short-slug`
-   (e.g. `task/T02-repo-structure-pages-deploy`). Open a PR into `main`,
-   get it merged, then move to the next task.
-3. **Dependency rule.** Before starting a task, every item in its
-   **Dependencies** must be :green_circle: Done. If not, state
-   *"I will not start this task until [TXX] is complete."* and wait.
-4. **Status values** are updated in the plan's Status column:
+1. One task = one focused thread.
+2. Use one branch per task:
+   task/TXX-short-slug
+3. Open a PR into main, verify the acceptance criteria, and merge before
+   starting dependent work.
+4. Before starting a task, check every dependency in the task plan. If
+   any dependency is not Done, state:
+   "I will not start this task until [TXX] is complete."
+   Do not implement the blocked task.
+5. Status values:
 
    | Status | Meaning |
-   | ------ | ------- |
-   | :white_large_square: Not Started | Ready to be picked up (dependencies done) |
-   | :yellow_circle: Needs Input | Blocked waiting on data/decision |
-   | :large_blue_circle: In Progress | Currently being worked on |
-   | :green_circle: Done | Merged via PR and verified |
+   | --- | --- |
+   | Not Started | Work has not begun |
+   | Needs Input | Waiting for client, clinic, provider, or policy input |
+   | In Progress | Actively being worked on |
+   | Done | PR merged and acceptance criteria verified |
 
-5. **Hand-off tasks (P1 + P2).** Backend PR first, then the UI PR. The
-   backend part must be merged before the UI part starts.
-6. **Verification.** A task is `Done` only after its PR is merged AND its
-   acceptance criteria pass in the live build.
-7. **Open items (T35).** Client-data decisions are tracked there. Blocked
-   tasks become `Needs Input` with a note.
+6. P1 + P2 hand-off tasks require the backend/API PR first, followed by
+   the web/mobile consumer PR.
+7. Demo defaults must be labelled and must not become production policy
+   without client approval.
+8. T35 is the decision gate for clinic policies, payment provider,
+   subscription plans, nutrition formulas, legal text, and release scope.
+   T36 is the gate for the client website, service catalogue, and brand
+   assets.
 
-## Pull Requests
+## Pull requests
 
-- Title: `TXX — short description`
-- Branch: `task/TXX-short-slug`
-- Base: `main`
-- Fill in the PR template (`.github/pull_request_template.md`): what was
-  done, how it was verified, acceptance criteria status.
-- Never commit `.env` files or real secrets (see `.env.example`).
+- Title: TXX - short description
+- Branch: task/TXX-short-slug
+- Base: main
+- Include what changed, how it was verified, and the status of each
+  acceptance criterion.
+- Never commit .env files, service-role keys, payment secrets, or real
+  customer/health data.
 
-## Verification before merging (T2 baseline)
+## Verification baseline
 
-```bash
-cd web
-npm ci
-npm run typecheck
-npm run build
-# Local preview of the deployed output:
-npm run preview
-```
+From the web directory:
 
-The `main` branch auto-deploys to
-`https://yahiaAlhindi.github.io/The-Perfect-Look-/` via
-`.github/workflows/deploy.yml`.
+    npm ci
+    npm run typecheck
+    npm run build
+    npm run preview
+
+For database changes, also run the relevant SQL/RLS tests and migration
+checks. For payment/subscription changes, use provider sandbox events and
+verify replay/idempotency. For nutrition changes, run approved fixture
+calculations and confirm formula/version metadata.
+
+The main branch deploys the web/PWA build through the configured GitHub
+Actions workflow. Native mobile release and production payment credentials
+are tracked by T45 and T48 and require the relevant client approvals.

@@ -1,781 +1,855 @@
-# The Perfect Look — MVP Project Tasks Breakdown
+# The Perfect Look - Project Tasks Breakdown
 
-Source document: `The_Perfect_Look_App_Requirements_UPDATED.md` (Software Requirements Specification, SRS v1)
+Source document: The_Perfect_Look_App_Requirements_UPDATED.md (SRS v2)
 
-This file converts the SRS into a complete, dependency-aware, two-person task plan for building the **MVP** (client-approval demo).
+This is the dependency-aware implementation plan for the updated
+multi-branch medical beauty and wellness platform. The existing tasks keep
+their IDs so the work already completed in the repository remains
+traceable. New v2 work starts at T36.
 
----
+## 1. What changed in v2
 
-## 1. Tech Stack Decision (MVP — Browser First)
+| New requirement | Tasks that deliver it |
+| --- | --- |
+| Dubai, Abu Dhabi, and future UAE branches | T21, T37 |
+| Unique permanent client number | T5, T37, T22, T25 |
+| Website service/brand source and approved content | T1, T10, T11, T36, T46 |
+| Price display, online payment, deposits, refunds | T23, T38, T39 |
+| Monthly nutrition subscription | T40, T41 |
+| BMI, BMR/TDEE, calories, macros, body goals | T42, T44 |
+| Eating schedule and nutritionist-reviewed meal plans | T43, T44 |
+| Native mobile app path in addition to website/PWA | T30, T45, T47, T48 |
+| Health-data privacy, payment security, branch-scoped access | T18, T31, T37, T38, T42 |
+| Expanded acceptance and release gates | T32, T33, T47, T48 |
 
-The SRS requires: responsive web/mobile interface, online database, Arabic + English, deployable so an overseas client can review it.
+## 2. Technical direction
 
-| Layer        | Choice                                      | Why                                                                                                                            |
-| ------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Frontend     | React 18 + Vite + TypeScript + Tailwind CSS | Browser-first MVP, extremely fast dev, easy static deploy. Mobile-first responsive design.                                      |
-| Routing      | React Router                                | Standard SPA routing for patient + admin areas.                                                                                  |
-| Server state | TanStack Query                              | Cache-invalidation for availability/booking consistency.                                                                         |
-| Backend/API  | Supabase (Postgres + Auth + RLS + REST)     | Online DB = SRS "System of Record"; free tier; handles auth, RLS, and transactions out of the box. No separate server to run.     |
-| DB           | Supabase PostgreSQL                         | Online database per SRS §2/§12. All future transactions live here; Excel is read-only migration input.                           |
-| Excel import | SheetJS (xlsx)                              | Parse the legacy Excel for the one-time migration (SRS §13).                                                                     |
-| i18n/RTL     | i18next + date-fns                          | Arabic + English with full RTL support (SRS §18).                                                                                |
-| PWA          | vite-plugin-pwa                             | Installable to the phone home screen, standalone mode — feels like a native app while living in the browser (MVP requirement).    |
-| Deploy       | GitHub Pages via GitHub Actions             | Free static hosting for `yahiaAlhindi.github.io/The-Perfect-Look-` so the client can open it anywhere on any device.              |
-| Validation   | zod                                         | Shared client/server-side schema validation (SRS §17).                                                                           |
+The platform has one shared backend and business-rule layer:
 
-> **Expo note:** Expo is preferred for the *production/next-level* native app. The MVP is deliberately React + Vite because it is browser-first and deployable to GitHub Pages. The component structure and API layer will be kept clean so the production app can migrate to Expo/React Native later without rewriting business logic.
+- **Web:** React, Vite, TypeScript, Tailwind CSS, React Router.
+- **Customer mobile:** installable PWA for the approval demo; Expo/React
+  Native for the native iOS/Android release.
+- **Server/data:** Supabase Auth, PostgreSQL, RLS, RPC/Edge Functions, and
+  a typed data-access layer.
+- **Payments:** provider-neutral checkout adapter with a UAE-compatible
+  provider selected by the client; provider secrets stay server-side.
+- **State and validation:** TanStack Query and shared Zod schemas.
+- **Migration:** SheetJS-based controlled Excel import with dry-run,
+  validation, deduplication, and an import report.
+- **Localization:** i18next, Arabic/English, RTL, AED, Asia/Dubai timezone.
+- **Web deployment:** GitHub Pages for the static web/PWA approval build;
+  Supabase hosts the protected backend operations.
+- **Mobile release:** TestFlight and Google Play internal testing before
+  production store publishing.
 
-> **SQLite note:** SQLite is allowed for local-only work, but since the MVP must run online for the client, **Supabase is the default**. SQLite may be used in the migration tool only for dry-run testing locally before hitting the online DB.
+The PWA is useful for the client demo but is not silently treated as the
+final native mobile application. T45 and T48 track that distinction.
 
----
+## 3. Ownership
 
-## 2. Team Roles
+### Person 1 - Backend, data, security, integrations, and deployment
 
-### Person 1 — Backend / Data / Infra (Supabase, APIs, migration, security, deploy)
-Owns: Supabase project & schema, seed data, auth API, services API, availability engine, booking/lifecycle logic, RBAC, admin APIs, Excel migration tool, notifications service, security hardening, GitHub Pages deployment.
+Owns Supabase schema/migrations, seed data, authentication, RLS/RBAC,
+availability, booking/lifecycle logic, branch scope, payments,
+subscriptions, nutrition calculations, migration, notifications,
+security, release automation, and production deployment.
 
-### Person 2 — Frontend / UI / UX (components, patient flows, admin UI, i18n, PWA)
-Owns: design system, auth pages, profile, services browsing, availability picker, booking flow, "My Appointments", staff dashboard, admin management screens, migration UI, notifications UI, Arabic/RTL, PWA polish, responsive mobile pass.
+### Person 2 - Frontend, mobile, UI/UX, content, and QA
 
----
+Owns the design system, brand implementation, customer web flows,
+staff/admin UI, Arabic/RTL, PWA, native mobile shell, checkout screens,
+subscription and nutrition screens, responsive QA, and client demo
+materials.
 
-## 3. Workflow Rules (Read This First)
+### Client / clinic reviewers
 
-1. **One task = one thread.** Open a separate chat thread per task. Focus that thread only on its task.
-2. **Branch per task.** Branch name: `task/TXX-short-slug` (e.g. `task/T14-booking-api`). Open a PR into `main`, get it merged, then move to the next task.
-3. **Dependency rule (MANDATORY).** Every task lists its **Dependencies**. Before starting ANY task, check every dependency's Status. If any dependency is not `🟢 Done`, you MUST state: *"I will not start this task until [TXX] is complete."* and do not begin work on it.
-4. **Status values** (updated in the Status column after each task):
+Approve the service catalogue, branch data, brand assets, prices, payment
+provider, nutrition formulas/content, policies, legal text, and release
+scope. These approvals are tracked in T35 and T36.
 
-| Status        | Meaning                                                                 |
-| ------------- | ----------------------------------------------------------------------- |
-| ⬜ Not Started | Ready to be picked up (all dependencies done)                          |
-| 🟡 Needs Input | Blocked waiting on data/a decision (details in Notes)                   |
-| 🔵 In Progress | Currently being worked on in a thread                                    |
-| 🟢 Done        | Merged via PR and verified                                              |
+## 4. Workflow rules
 
-5. **Hand-off tasks.** Some tasks are labeled **"P1 + P2"** — they must be done as two PRs (P1 backend/API first, then P2 wires the UI to it). The backend part must be merged and marked done before the UI part starts.
-6. **Verification.** Every task is only `🟢 Done` after its PR is merged AND its acceptance criteria pass in the live build.
-7. **Open items (T35).** Anything needing client data is tracked there. If a task is blocked by T35, mark it `🟡 Needs Input` and note what's missing.
+1. One task = one focused thread and one branch named
+   task/TXX-short-slug.
+2. Open a PR into main for each task and merge it before moving to the
+   next dependent task.
+3. Before starting a task, every dependency must be marked Done. If any
+   dependency is not Done, state: "I will not start this task until [TXX]
+   is complete." Do not implement the dependent task.
+4. Status values:
 
----
+   | Status | Meaning |
+   | --- | --- |
+   | Not Started | Not begun; dependencies may or may not be complete |
+   | Needs Input | Waiting for client data, approval, provider, or policy |
+   | In Progress | Actively being worked on in a branch/thread |
+   | Done | PR merged and acceptance criteria verified |
 
-## 4. Task Plan
+5. A P1 + P2 task is completed in two hand-offs: backend/API first, then
+   the UI or mobile consumer.
+6. A task is Done only when its acceptance criteria pass in the relevant
+   local/staging/live build and evidence is recorded in the PR.
+7. Demo defaults must be labelled and must not be treated as clinic policy.
+8. Health, payment, and subscription features require client/qualified
+   reviewer approval before production enablement.
 
-> Priority = build order. P1 builds backend foundations first; P2 builds UI in parallel where dependencies allow.
+## 5. Task plan
 
----
+### Milestone A - Foundation and existing baseline
 
-### MILESTONE A — Foundation & Setup
+#### T1 - Design system, brand-ready UI theme
 
-#### T1 — Design System & UI Theme
 - **Owner:** Person 2
-- **Priority:** Must Start First (can start immediately)
+- **Priority:** Must start first
 - **Dependencies:** none
-- **Status:** ⬜ Not Started
+- **Status:** Not Started
 - **Description:**
-  - Set up the React + Vite + TypeScript + Tailwind project with the app shell and design system.
-  - Brand: premium beauty-clinic feel (The Perfect Look): elegant colors (e.g. soft neutrals, gold/rose accents), clean modern typography that supports Arabic glyphs.
-  - Build the core component library: Button, Input, Select, Checkbox, Card, Badge, Modal/Dialog, Tabs, Toast/Snackbar, Spinner, Empty state, Page header.
-  - Space tokens, radius, shadows, spacing scale; mobile-first responsive breakpoints (SMS-sized to desktop).
-  - App shell with protected/public routing skeleton and shared layout (header, footer, bottom nav for mobile).
+  - Set up the React/Vite/TypeScript/Tailwind app shell and design tokens.
+  - Build reusable buttons, inputs, selects, checkboxes, cards, badges,
+    dialogs, tabs, toasts, loading states, empty states, and page headers.
+  - Support responsive web, phone-sized PWA, Arabic/RTL, and future native
+    mobile token reuse.
+  - Use placeholder brand tokens until the approved assets arrive from
+    T36; do not hard-code a guessed final palette.
 - **Acceptance criteria:**
-  - Design tokens consumed by all components (no hard-coded colors in screens).
-  - Components used by both the patient and admin areas.
-  - A storybook-style demo page OR clearly documented component usage examples.
-  - Passes responsive check at 360px, 768px, 1280px widths.
-- **Notes:** This is the visual foundation; all P2 UI tasks reuse it.
+  - Patient and admin screens consume shared tokens and components.
+  - Responsive checks pass at 360px, 768px, and 1280px.
+  - A component demo or usage document exists.
+  - Brand assets can be swapped from one configuration layer.
+- **Notes:** T46 applies the approved client assets and final catalogue
+  content after T36.
 
----
+#### T2 - Repository structure and web deployment pipeline
 
-#### T2 — Repo Structure & GitHub Pages Deploy Pipeline
 - **Owner:** Person 1
-- **Priority:** Must Start First (can start immediately)
+- **Priority:** Must start first
 - **Dependencies:** none
-- **Status:** 🟢 Done
+- **Status:** Done
 - **Description:**
-  - Define repo layout: `/web` (frontend app), `/supabase` (SQL migrations + seed), `/tools` (migration script), `/docs` (this plan).
-  - Add `vite-plugin-pwa` readiness config and `base` set for GitHub Pages sub-path `/The-Perfect-Look-/`.
-  - GitHub Actions workflow: on push to `main` → install → build → typecheck → deploy `dist` to `gh-pages` branch (or use `actions/deploy-pages`).
-  - Set up branch + PR conventions described in §3.
-  - Environment variable strategy: `.env.example` with Supabase URL/anon key; secrets never committed.
+  - Maintain web, Supabase, tools, and docs structure.
+  - Keep GitHub Pages base-path and CI build/typecheck/deploy pipeline
+    working.
+  - Keep environment variables and secrets out of source control.
 - **Acceptance criteria:**
-  - Empty-but-compiling app deploys to `https://yahiaAlhindi.github.io/The-Perfect-Look-/` and loads.
-  - PR → merge → auto-deploy cycle proven with a trivial change.
-  - `.env.example` present; no real keys in repo.
-- **Notes:** Everything else deploys on top of this.
+  - The compiling app deploys to the configured GitHub Pages URL.
+  - The PR-to-merge-to-deploy path has been proven.
+  - No real keys are committed.
+- **Notes:** Existing baseline completed; re-run after major release work.
 
----
+#### T3 - Supabase baseline schema and project
 
-#### T3 — Supabase Project & Database Schema
 - **Owner:** Person 1
 - **Priority:** 1
-- **Dependencies:** T2 (repo structure needed to hold `supabase/` migrations)
-- **Status:** 🟢 Done
+- **Dependencies:** T2
+- **Status:** Done
 - **Description:**
-  - Create the Supabase project (online database = System of Record, SRS §12).
-  - Write SQL migrations covering (SRS §12 + §20):
-    - **profiles** — id, full_name, mobile_number (unique), email (unique), dob, gender, preferred_language, role (patient/staff/admin), created_at.
-    - **services** — id, name, description, duration_minutes, price, currency, active, assigned_staff_type, booking_rules (JSONB), sort_order.
-    - **staff** — id, profile_id, title, specializations, active.
-    - **staff_availability** — id, staff_id, day_of_week, start_time, end_time.
-    - **blocked_periods** — id, staff_id (nullable = clinic-wide), start_datetime, end_datetime, reason.
-    - **holidays** — id, date, reason.
-    - **appointments** — id (unique ref + human-readable Appointment ID), patient_id, service_id, staff_id (nullable), scheduled_start, scheduled_end, status, notes, cancel_reason, last_modified fields.
-    - **notifications** — id, user_id, type, channel, subject, body, status, sent_at, read_at.
-    - **audit_logs** — id, admin_user_id, action, entity, entity_id, details JSONB, created_at.
-    - **app_settings** — key, value JSONB (clinic working hours, slot interval, cancellation notice hours, rescheduling, currency, etc.).
-  - Enums + check constraints for appointment statuses (Pending, Confirmed, Completed, Cancelled, Rescheduled, No Show — SRS §10) and notification channels (Email, SMS, WhatsApp — SRS §15).
-  - Uniqueness/indexes: email, mobile_number; appointment date/time + staff; foreign keys with `ON DELETE RESTRICT`.
-  - Row Level Security (RLS) policies covering patient, staff, admin access; **patients can only read/write their own data; staff/admin access granted by role** (SRS §17).
-  - Seed an admin account (used for initial setup).
+  - Maintain the baseline profiles, services, staff, availability,
+    blocked periods, holidays, appointments, notifications, audit logs,
+    app settings, Auth integration, and RLS.
+  - Keep appointment concurrency and patient-owned data protections.
 - **Acceptance criteria:**
-  - All migrations apply cleanly in the online Supabase project.
-  - `supabase/schema.sql` + seed script committed in the PR.
-  - RLS blocks a patient from reading another patient's appointments (verified via an SQL test).
-  - Appointment status values match SRS §10 exactly.
-- **Notes:** The SRS says "final schema will be incorporated once provided by the project owner" (§20) — this schema is the MVP proposal and must be stable before T4–T27 start. Merged via PR #4. End-to-end verification against the live Supabase project is pending project creation + `supabase db push` (not run on the build machine).
+  - Existing migrations apply cleanly.
+  - A patient cannot read another patient's appointments.
+  - Baseline status values, indexes, constraints, and RLS tests pass.
+- **Notes:** Done for the original booking baseline. T37 adds the v2
+  branch, client-number, pricing, and access-scope schema; T3 must not be
+  marked as v2-complete until that extension is merged.
 
----
+#### T4 - Baseline seed data
 
-#### T4 — Seed Data (services, staff, working hours, settings)
 - **Owner:** Person 1
 - **Priority:** 1
 - **Dependencies:** T3
-- **Status:** 🟢 Done
+- **Status:** Done
 - **Description:**
-  - Seed the services from SRS §8 with sensible durations/prices (flagged in T35 for client confirmation):
-    1. Skin Care Treatment
-    2. Advanced Hair Care Solutions
-    3. Laser Hair Removal
-    4. Clinical Nutrition & Weight Management
-    5. Body Contouring / Fat Reduction
-    6. Cellulite Treatment
-    7. Slimming / Weight Management
-    8. Other services/packages (placeholder — final list per T35)
-  - Seed 2–3 demo staff members with weekly availability.
-  - Seed `app_settings`: working hours, slot interval (e.g. 30 min), cancellation notice period, rescheduling window, currency (default AED), holiday calendar.
-  - Idempotent (safe to re-run).
+  - Keep demo services, staff, weekly availability, working hours,
+    cancellation defaults, AED settings, and holidays idempotent.
 - **Acceptance criteria:**
-  - Services, staff, and settings visible via direct SQL query (verified by `supabase/tests/seed_data.sql`).
-  - Settings read from `app_settings`, not hard-coded in the app.
-- **Notes:** Values are demo defaults until the clinic answers T35. Migration `003_seed_data.sql` is idempotent (re-run safe, preserves clinic edits). Live `supabase db push` + re-run of the seed test is pending project creation (same outstanding item as T3/T5).
+  - Seed script can be re-run without duplicate rows or overwriting clinic
+    edits.
+  - Services and settings are available through the data layer.
+- **Notes:** Demo values only. T36 supplies approved catalogue/brand data;
+  T37 adds demo Dubai/Abu Dhabi branch records.
 
----
+#### T5 - Authentication, session, and profile API
 
-### MILESTONE B — Authentication & Patient Account (SRS §5, §6, §7)
-
-#### T5 — Auth & Session API (person-side: Supabase Auth + profile sync)
 - **Owner:** Person 1
 - **Priority:** 2
 - **Dependencies:** T3
-- **Status:** 🟢 Done
+- **Status:** Done
 - **Description:**
-  - Wire Supabase Auth: sign up (email + password), sign in with email OR mobile number (business decision T35), sign out, send password reset, update password.
-  - On sign-up trigger (DB trigger/edge function): insert into `profiles` with role=patient; enforce mobile/email uniqueness on both `auth.users` and `profiles`.
-  - Email format, mobile format (UAE/E.164 normalization), and password policy validation at the API boundary (SRS §5).
-  - Secure session/token lifecycle; session persisted for refresh (SRS §6).
-  - Expose a client API module (`supabase/client.ts`) used by all P2 screens.
+  - Keep Supabase Auth registration, login, logout, reset, session
+    persistence, profile creation, and duplicate email/mobile handling.
+  - Normalize UAE/international mobile numbers and keep passwords managed
+    by Supabase Auth.
 - **Acceptance criteria:**
-  - Register → login → logout → password reset works end to end via API.
-  - Every new auth user automatically gets a `profiles` row.
-  - Duplicate email/mobile returns a clear, mapped error (no raw DB errors).
-  - Passwords are stored hashed by Supabase; never plain text (SRS §6/§17).
-- **Notes:** OTP is explicitly "optional later" per SRS §6 — skipped in MVP. Merged via PR #5; typecheck + build green in CI. Live DB end-to-end run (register → login → logout → reset) is pending project creation + `supabase db push` (same outstanding item as T3).
+  - Register -> login -> logout -> reset works through the API.
+  - Every new user receives a profile and role=customer/patient by
+    default.
+  - Patient-owned access and mapped errors are tested.
+- **Notes:** The permanent client number is added by T37 and must appear
+  in customer-facing flows before the v2 account feature is Done.
 
----
+### Milestone B - Customer account and profile
 
-#### T6 — Auth Pages: Register / Login / Forgot & Reset Password
+#### T6 - Customer authentication pages
+
 - **Owner:** Person 2
 - **Priority:** 2
-- **Dependencies:** T1 (design system), T5 (auth API to wire to)
-- **Status:** ⬜ Not Started
-- **Description:**
-  - **Register** (SRS §5): full_name, mobile, email, password, confirm password, DOB, gender, preferred_language, required consent checkbox for Privacy Policy / Terms.
-  - **Login** (SRS §6): email or mobile + password, remember-me, forgot-password link.
-  - **Forgot / Reset password**: request reset → Supabase email link → set new password → success screen.
-  - **Logout** button in the app shell.
-  - Live validation mirroring T5 rules (email format, mobile format, password policy, confirm-password match, required fields, duplicate-account server errors mapped to friendly Arabic/English messages).
-  - Disable submit while pending; friendly error/success toasts; language switcher present.
-- **Acceptance criteria:**
-  - Full happy-path + error-path flows verified against live Supabase.
-  - Terms consent blocks submission until checked (SRS §5).
-  - Both EN and AR render (see also T29).
-- **Notes:** Consumes all routes/errors from T5; if a server error message is missing, add it to T5's mapped-error catalog instead of hard-coding a workaround in UI.
+- **Dependencies:** T1, T5
+- **Status:** Not Started
+- **Description:** Build registration, login, forgot/reset password,
+  logout, consent, language switch, validation, and return-to-booking
+  behavior.
+- **Acceptance criteria:** Happy/error paths work in English and Arabic,
+  required consent blocks submission, and the UI works on mobile.
+- **Notes:** Include a visible client number after account creation once
+  T37 exposes it.
 
----
+#### T7 - Customer profile UI
 
-#### T7 — Patient Profile: View, Edit, Change Password
 - **Owner:** Person 2
 - **Priority:** 3
-- **Dependencies:** T6, T8 (profile API)
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Profile screen (SRS §7): view personal info; edit allowed fields; change password (current + new + confirm); save with optimistic updates.
-  - Role-aware: patients see only their own profile.
-  - Entry points from app shell; works in EN + AR.
-- **Acceptance criteria:**
-  - Edits persist to `profiles` and reload correctly after refresh.
-  - Change password validates current password and rejects wrong values.
-  - Mobile/email uniqueness conflicts surfaced as friendly errors.
-- **Notes:** Depends on T8 for the update endpoint behavior.
+- **Dependencies:** T6, T8
+- **Status:** Not Started
+- **Description:** View/edit allowed profile fields, client number,
+  language, consent preferences, and password change. Keep sensitive
+  nutrition data in its own protected flow.
+- **Acceptance criteria:** Changes persist, uniqueness errors are friendly,
+  client number cannot be edited, and the customer cannot access another
+  profile.
 
----
+#### T8 - Profile and consent API
 
-#### T8 — Profile API (GET/PUT profile, change password)
 - **Owner:** Person 1
 - **Priority:** 3
 - **Dependencies:** T3, T5
-- **Status:** ⬜ Not Started
-- **Description:**
-  - `GET /profile` — fetch own profile (RLS-scoped).
-  - `PUT /profile` — update allowed fields (full_name, dob, gender, preferred_language); email/mobile change restricted or gated (decision T35).
-  - Change-password endpoint via Supabase Auth (`updateUser({ password })` after verifying current password).
-- **Acceptance criteria:**
-  - Profile fetch/update verified with RLS enforced (patient A cannot edit patient B).
-  - Change password verified — old password required.
-- **Notes:** Mirror of SRS §16 `GET /profile`, `PUT /profile`.
+- **Status:** Not Started
+- **Description:** Implement own-profile GET/PUT, allowed field rules,
+  password change, consent history, data-request entry point, and
+  server-side validation.
+- **Acceptance criteria:** RLS prevents cross-customer updates; consent
+  records include version and timestamp; sensitive fields are not exposed
+  to public queries.
 
----
+### Milestone C - Catalogue, branches, and availability
 
-### MILESTONE C — Services & Availability (SRS §8, §11)
+#### T9 - Service catalogue API baseline
 
-#### T9 — Services API (public list + detail + admin CRUD backend)
 - **Owner:** Person 1
 - **Priority:** 3
 - **Dependencies:** T3, T4
-- **Status:** 🟢 Done
-- **Description:**
-  - `GET /services` — active services only for patients (SRS §8 `active` flag).
-  - `GET /services/:id` — service detail (description, duration, price visibility per T35, assigned staff type, booking rules).
-  - Admin CRUD endpoints (create/update/deactivate) used by T11/T12 - enforce staff/admin role (T18 RBAC).
-  - Services are dynamic from the online DB — no code deploy when a service is added/changed (SRS §8).
-- **Acceptance criteria:**
-  - Frontend never hard-codes service lists; everything comes from the API.
-  - Editing a service in admin is reflected on the patient side immediately.
-- **Notes:** Feeds T10 (patient UI) and T11/T12 (admin UI). Implemented as `web/src/lib/supabase/services.ts` (`listServices`, `getService`, `listServicesAdmin`, `createService`, `updateService`, `deactivateService`); price visibility is read from `app_settings.price_visibility` (T35 default `contact_us`) + per-service `price_on_request`; write RBAC is enforced server-side by RLS (admin-only, `supabase/tests/services_api.sql`); admin writes also log to `audit_logs` (T31). Typecheck + production build green. Live DB e2e run pending project creation (same outstanding item as T3/T4/T5).
+- **Status:** Done
+- **Description:** Keep public active-service list/detail and admin CRUD
+  with duration, description, price visibility, staff type, booking
+  rules, and audit logging.
+- **Acceptance criteria:** The frontend reads services from the database;
+  inactive services are hidden; admin edits are reflected without a code
+  deploy.
+- **Notes:** Existing baseline implementation is complete. T37 adds
+  branch pricing/availability and T46 loads the approved client content.
 
----
+#### T10 - Customer services and branches browsing UI
 
-#### T10 — Patient Services Browsing UI
 - **Owner:** Person 2
 - **Priority:** 3
-- **Dependencies:** T9
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Services listing screen: elegant cards with name, short description, duration, price (if enabled), "Book" call-to-action (SRS §8).
-  - Service detail view with full description and booking rules.
-  - Loading skeletons + empty state; Arabic + English.
-- **Acceptance criteria:**
-  - All active services render from API; inactive/deleted services never appear.
-  - "Book" navigates to the booking flow (T15).
-- **Notes:** Reuses T1 components.
+- **Dependencies:** T1, T9
+- **Status:** Not Started
+- **Description:** Build service categories, service detail, branch list,
+  branch detail, price/duration display, preparation/aftercare content,
+  and Book actions.
+- **Acceptance criteria:** Active data renders from the API; customer can
+  select a branch; loading/empty/error states and English/Arabic work.
+- **Notes:** Use demo content until T36/T46 are complete.
 
----
+#### T11 - Service catalogue admin UI
 
-#### T11 — Services Admin UI (CRUD + availability flags)
 - **Owner:** Person 2
 - **Priority:** 4
-- **Dependencies:** T20 (admin APIs incl. services management), T18 (admin role guard)
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Admin screen: list services with active/inactive toggle, create/edit/delete form (name, description, duration, price, assigned staff type, booking rules).
-  - Search + status filter; confirm dialogs on destructive actions.
-- **Acceptance criteria:**
-  - Admin changes instantly reflect on the patient services screen.
-  - Non-admin (patient) cannot reach the screen (guard via T18).
-- **Notes:** UI counterpart of the services admin part of T20.
+- **Dependencies:** T18, T20, T37
+- **Status:** Not Started
+- **Description:** CRUD for categories, services, packages, branch
+  availability, branch prices, duration, buffers, provider type,
+  booking rules, images/content, publish state, and price-on-request.
+- **Acceptance criteria:** Authorized users can update catalogue data;
+  branch-scoped users cannot edit another branch; public UI reflects
+  approved changes.
 
----
+#### T12 - Branch-aware availability engine
 
-#### T12 — Availability Engine (slots, working hours, staff, blocks) — CORE BUSINESS LOGIC
 - **Owner:** Person 1
 - **Priority:** 4
-- **Dependencies:** T3, T4, T9
-- **Status:** ⬜ Not Started
-- **Description:**
-  - `GET /availability?serviceId=&staffId=&date=` (SRS §16) returns bookable slots for a given day.
-  - Generate slots from `app_settings` working hours + slot interval; subtract holidays (`holidays`) and blocked periods (`blocked_periods`, clinic-wide and per-staff); respect staff availability (`staff_availability`).
-  - A slot is **bookable only if** no active appointment already occupies it — must read live state to prevent double booking (SRS §11).
-  - Optional preferred-staff query reduces to that staff's slots.
-  - Store slots in a `slots` ledger table OR compute against `appointments` with row locks — design must make double-booking impossible at DB level (SRS §11, §18).
+- **Dependencies:** T3, T4, T9, T37
+- **Status:** Not Started
+- **Description:** Generate slots from branch hours, service duration and
+  buffers, provider schedules, leave, holidays, closures, blocks,
+  capacity, and existing appointments. Include branch and timezone in
+  every query.
 - **Acceptance criteria:**
-  - Slots respect: working hours, slot interval, holidays, blocked periods, staff schedules.
-  - A booked slot never appears as available again.
-  - API test: two simultaneous requests for the same slot → exactly one succeeds.
-- **Notes:** Feeds T13 (picker UI) and T14 (booking). This is the trickiest P1 logic — take time to make the concurrency guard solid.
+  - Slots respect branch/provider rules and Asia/Dubai time.
+  - A staff member working at two branches cannot be double-booked.
+  - Parallel requests for one slot result in exactly one successful
+    booking.
+- **Notes:** This remains a core concurrency boundary for all channels.
 
----
+#### T13 - Availability picker UI
 
-#### T13 — Availability Picker UI (date + slot + preferred staff)
 - **Owner:** Person 2
 - **Priority:** 4
 - **Dependencies:** T12
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Date navigator (day/week view, only bookable days enabled).
-  - Slot grid for the selected date (with timezone handled for the clinic's location).
-  - Optional "preferred staff" select when the service supports it (SRS §9 step 5).
-  - Unavailable/blocked slots visually disabled with reason (holiday / fully booked).
-- **Acceptance criteria:**
-  - Slots match the API exactly; selecting a slot carries it into the booking flow (T15).
-  - Arabic + English rendering.
-- **Notes:** Depends on T12's data contract; if the shape changes, T12 owns the contract.
+- **Status:** Not Started
+- **Description:** Build branch -> provider (optional) -> date -> slot
+  selection with mobile-friendly day/week navigation and clear
+  unavailable states.
+- **Acceptance criteria:** UI matches API availability, carries branch and
+  slot into booking, and renders in English/Arabic/RTL.
 
----
+### Milestone D - Appointment booking and lifecycle
 
-### MILESTONE D — Appointment Booking & Lifecycle (SRS §9, §10, §11)
+#### T14 - Appointment booking API
 
-#### T14 — Appointment Booking API (transactional, no double booking)
 - **Owner:** Person 1
 - **Priority:** 5
-- **Dependencies:** T12, T9, T5
-- **Status:** ⬜ Not Started
-- **Description:**
-  - `POST /appointments` (SRS §16): flow = re-check slot availability **inside a DB transaction** → insert appointment → mark slot taken.
-  - Race-free: use row-level locks / unique constraint so two bookings for the same slot cannot both succeed.
-  - Generate unique, human-readable **Appointment ID** (e.g. `TPL-20260912-XXXX`).
-  - Validate: service active, slot within working hours, not holiday/blocked, notice-period rules (SRS §11).
-  - Create "Pending" appointment; confirmation flows per SRS §9 step 9.
-  - Trigger notification hook (T27).
-- **Acceptance criteria:**
-  - Double-booking attempt always fails server-side (verified with parallel requests).
-  - Appointment persisted in online DB with valid status + unique Appointment ID.
-  - Business rules (working hours, holidays, blocks, notice periods) all enforced.
-- **Notes:** The vertex of the whole app — correctness here is non-negotiable.
+- **Dependencies:** T5, T9, T12, T37
+- **Status:** Not Started
+- **Description:** Transactional appointment creation with server-side
+  re-check of branch, price, service, provider, slot, notice period,
+  booking rules, and customer identity. Generate a unique Appointment ID
+  and store the client number and branch.
+- **Acceptance criteria:** Double-booking is impossible; inactive/invalid
+  service or slot is rejected; confirmation data includes appointment ID,
+  client number, branch, service, time, and payment status.
+- **Notes:** Payment may initially be unpaid/pay-at-clinic; T38 adds
+  online checkout and payment-required transitions.
 
----
+#### T15 - Customer booking flow UI
 
-#### T15 — Booking Flow UI (multi-step wizard)
 - **Owner:** Person 2
 - **Priority:** 5
 - **Dependencies:** T13, T14
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Mobile-friendly wizard (SRS §9 steps 1–9): Service → Date & Slot (T13) → Preferred staff (if any) → Review & Confirm → Confirmation screen with Appointment ID + next steps.
-  - Requires login; redirects to login with a "return to booking" behavior when a guest tries to book.
-  - Backend availability re-check surfaced: if the slot is taken at confirm time, show a friendly "slot just taken, pick another" state.
-- **Acceptance criteria:**
-  - Full flow completes and creates a real appointment in Supabase.
-  - Slot-taken race handled gracefully.
-  - Works at mobile width and flows naturally.
-- **Notes:** Consumes T14 API; maps server statuses to friendly messages.
+- **Status:** Not Started
+- **Description:** Mobile-friendly wizard: service -> branch -> provider
+  -> date/slot -> customer review -> price/payment choice -> confirmation.
+  Handle login redirect and slot-taken errors.
+- **Acceptance criteria:** A customer can create a real appointment; the
+  review shows price/policy/branch; errors are friendly and localized.
 
----
+#### T16 - Appointment lifecycle API
 
-#### T16 — Appointment Lifecycle API (list, detail, cancel, reschedule)
 - **Owner:** Person 1
 - **Priority:** 5
-- **Dependencies:** T14, T3
-- **Status:** ⬜ Not Started
-- **Description:**
-  - `GET /appointments` — my appointments (upcoming + history) (SRS §7, §16).
-  - `GET /appointments/:id` — detail with service/staff info.
-  - `POST /appointments/:id/cancel` — releases the slot, sets status Cancelled, respects notice period (SRS §11).
-  - `PUT /appointments/:id` — reschedule: in one transaction release old slot + reserve new slot (SRS §11), status → Rescheduled, keep a link to history.
-  - Enforce rules: only own appointments (patients) or staff/admin; cancellation/reschedule only for Pending/Confirmed; notice-period checks.
-- **Acceptance criteria:**
-  - Cancel releases the slot (it is bookable again).
-  - Reschedule atomically frees old + holds new slot (no gap where both are taken or none).
-  - Upcoming vs history correctly derived from date/time + status.
-- **Notes:** Feeds T17 (My Appointments UI) and T22 (admin management).
+- **Dependencies:** T14, T37
+- **Status:** Not Started
+- **Description:** List/detail/upcoming/history, cancel, reschedule,
+  confirm, check-in, complete, no-show, and audit history. Apply
+  branch-scoped staff permissions and notice/refund rules.
+- **Acceptance criteria:** Cancel releases a slot; reschedule atomically
+  releases old and reserves new slot; customer access is own-record only.
 
----
+#### T17 - My appointments UI
 
-#### T17 — My Appointments UI (upcoming + history, cancel/reschedule)
 - **Owner:** Person 2
 - **Priority:** 5
-- **Dependencies:** T16
-- **Status:** ⬜ Not Started
-- **Description:**
-  - "My Appointments" (SRS §7): tabs/sections for Upcoming and History.
-  - Cards show service, date/time, staff, status badge, Appointment ID.
-  - Cancel action (with confirm dialog + reason) and Reschedule action (reuses T13 picker).
-  - Statuses displayed per SRS §10 (Pending/Confirmed/Completed/Cancelled/Rescheduled/No Show).
-  - Empty states and loading states.
-- **Acceptance criteria:**
-  - Cancelling updates the list immediately and the slot is gone from the app's availability.
-  - Reschedule opens the picker and updates the appointment on confirm.
-  - Arabic + English.
-- **Notes:** Reuses T1 components + T13 picker.
+- **Dependencies:** T13, T16
+- **Status:** Not Started
+- **Description:** Upcoming/history cards with client number, Appointment
+  ID, branch, service, provider, time, status, payment status, cancel,
+  reschedule, and policy messages.
+- **Acceptance criteria:** Actions update lists and availability; status
+  badges and empty/error states work in English and Arabic.
 
----
+### Milestone E - Staff, branch, and admin portal
 
-### MILESTONE E — Staff & Admin Portal (SRS §14)
+#### T18 - Roles, invitations, and branch-scoped RBAC
 
-#### T18 — Roles, Invitations & Access Control (RBAC)
 - **Owner:** Person 1
 - **Priority:** 4
-- **Dependencies:** T5, T3
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Role model: patient / staff (receptionist) / admin on `profiles.role` + helper claims.
-  - Staff invitation flow (admin creates staff account).
-  - Route guard helper exposed to frontend (can user access `role >= staff`?).
-  - All admin/staff API endpoints enforce role server-side + via RLS (SRS §17, §19: "Unauthorized users cannot access staff/admin functions").
-- **Acceptance criteria:**
-  - Patient token receives 403 on any admin endpoint.
-  - Staff can access staff-only endpoints; admin can access everything; patients only their own data.
-- **Notes:** Prerequisite for T11, T19–T24.
+- **Dependencies:** T3, T5, T37
+- **Status:** Not Started
+- **Description:** Add customer, receptionist, branch manager, provider,
+  nutritionist, finance, administrator, and super-administrator roles.
+  Enforce branch scope in claims/RLS/API and protect health/payment data.
+- **Acceptance criteria:** A customer receives 403 for staff APIs; a branch
+  user cannot read another branch's records; finance can see payments
+  without unnecessary nutrition data; admin access is auditable.
 
----
+#### T19 - Staff dashboard UI
 
-#### T19 — Staff Dashboard UI (today's & upcoming appointments)
 - **Owner:** Person 2
 - **Priority:** 6
-- **Dependencies:** T16, T18, T20 (list/search API)
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Dashboard (SRS §14): today's and upcoming appointments; quick status change (Pending → Confirmed → Completed; No Show; Cancel with reason).
-  - Search/filter by patient, service, staff, date, status.
-  - Compact table (desktop) + card list (mobile).
-- **Acceptance criteria:**
-  - Staff can see and update appointment statuses.
-  - Filters behave server-side (via T20).
-- **Notes:** Person 2's main staff-facing screen.
+- **Dependencies:** T16, T18, T20
+- **Status:** Not Started
+- **Description:** Today's/upcoming calendar and list, branch filter,
+  customer/client-number search, service/provider/status filters, and
+  permitted status actions.
+- **Acceptance criteria:** Staff see only authorized branches and can
+  update allowed appointment statuses from desktop or mobile layout.
 
----
+#### T20 - Admin APIs
 
-#### T20 — Admin APIs (staff, availability, appointments, reports, services mgmt)
 - **Owner:** Person 1
 - **Priority:** 5
-- **Dependencies:** T3, T16, T18
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Staff CRUD + role assignment (feeds T21).
-  - Staff availability + blocked-period CRUD (feeds T21) — consumed by the availability engine (T12).
-  - Appointment management endpoints: create-on-behalf, confirm, cancel, reschedule, complete, no-show (feeds T22).
-  - Search/filter endpoint for appointments (patient, service, staff, date, status) (SRS §14).
-  - Services + settings management endpoints (admin portion consumed by T11).
-  - Role-enforced on every route (T18).
-- **Acceptance criteria:**
-  - Every listed operation works with proper RBAC (403 for non-admin where required).
-  - Availability changes via this API immediately affect new slot lookups.
-- **Notes:** The admin surface of the SRS §14 + §16 "Admin APIs". Feeds T21, T22, T23.
+- **Dependencies:** T16, T18, T37
+- **Status:** Not Started
+- **Description:** Branch, staff, service, availability, appointment,
+  customer lookup, settings, payment/subscription, report, and audit
+  endpoints. Include create-on-behalf booking.
+- **Acceptance criteria:** Every route has server-side role and branch
+  checks; availability changes affect new lookups; actions are logged.
 
----
+#### T21 - Branch and staff management UI
 
-#### T21 — Admin Staff Management UI (staff, availability, blocked time)
 - **Owner:** Person 2
 - **Priority:** 6
-- **Dependencies:** T20, T18
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Manage staff: invite/create, edit details, activate/deactivate, assign role.
-  - Manage staff weekly availability (per day-of-week start/end times) (SRS §14).
-  - Manage clinic-wide & per-staff blocked periods and holidays.
-- **Acceptance criteria:**
-  - Availability/block changes reflect in the patient-facing availability inside a refresh.
-  - Guarded to admin role.
-- **Notes:** Reuses T1 form components.
+- **Dependencies:** T18, T20, T37
+- **Status:** Not Started
+- **Description:** Manage branches, hours, holidays, closures, staff
+  invitations, role, branch assignment, provider schedule, leave, and
+  blocked periods.
+- **Acceptance criteria:** Changes affect availability after refresh;
+  branch managers cannot manage outside their scope; destructive actions
+  require confirmation.
 
----
+#### T22 - Admin appointment and customer management UI
 
-#### T22 — Admin Appointment Management UI
 - **Owner:** Person 2
 - **Priority:** 6
-- **Dependencies:** T16, T20
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Admin/staff screens: search/filter appointments (patient, service, staff, date, status) (SRS §14).
-  - Create appointment for a patient (booking on their behalf).
-  - Confirm / cancel / reschedule / complete / mark no-show.
-  - View patient appointment history per role permissions.
-- **Acceptance criteria:**
-  - All status transitions per SRS §10 available; slot consistency maintained (uses T16 logic).
-  - RBAC respected.
-- **Notes:** Sits on T20 endpoints; visual twin of T19 for admins.
+- **Dependencies:** T16, T18, T20
+- **Status:** Not Started
+- **Description:** Search by client number/name/mobile/email, view permitted
+  customer history, create appointments on behalf, and manage all
+  approved status transitions.
+- **Acceptance criteria:** Search is branch-scoped, status changes preserve
+  slot consistency, and customer health data is not shown to roles that
+  do not need it.
 
----
+#### T23 - Reports and export API
 
-#### T23 — Reports & Export API (CSV/Excel)
 - **Owner:** Person 1
 - **Priority:** 7
-- **Dependencies:** T20
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Export endpoint for appointments (filtered) → CSV/Excel (SRS §14 "Export reports/data when required").
-  - Include migration results endpoint (imported/skipped/duplicate/failed) for the T26 UI (SRS §14 "View migration results").
-- **Acceptance criteria:**
-  - Exported file opens correctly and contains filtered data.
-  - Migration report retrievable by admin.
-- **Notes:** Feeds T24 (UI) and T26 (migration UI).
+- **Dependencies:** T20, T37
+- **Status:** Not Started
+- **Description:** Export filtered appointments, clients, branch
+  utilization, revenue/payment records, subscriptions, and migration
+  results as authorized CSV/Excel reports.
+- **Acceptance criteria:** Filters are applied server-side, exports contain
+  only permitted fields, and migration results are retrievable.
 
----
+#### T24 - Reports and export UI
 
-#### T24 — Reports & Export UI
 - **Owner:** Person 2
 - **Priority:** 7
-- **Dependencies:** T23, T18
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Admin screen with export buttons for appointment reports (respecting current filters).
-  - Download handling (CSV) and success/failure toasts.
-- **Acceptance criteria:**
-  - One click exports the currently filtered dataset.
-  - Guarded to admin role.
-- **Notes:** Thin UI over T23.
+- **Dependencies:** T18, T23
+- **Status:** Not Started
+- **Description:** Admin report screens, filters, export buttons, download
+  state, and permission-aware errors.
+- **Acceptance criteria:** One action exports the current authorized
+  dataset; no sensitive fields leak to unauthorized roles.
 
----
+### Milestone F - Legacy Excel migration
 
-### MILESTONE F — Legacy Excel Migration (SRS §2, §13)
+#### T25 - Excel migration and validation engine
 
-#### T25 — Excel Migration Tool & Validation Engine
 - **Owner:** Person 1
 - **Priority:** 6
-- **Dependencies:** T3, T4
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Node/TS script + reusable library to read the legacy Excel (SheetJS) and migrate to Supabase (SRS §13).
-  - Mapping per SRS §13 example matrix:
+- **Dependencies:** T3, T4, T37
+- **Status:** Not Started
+- **Description:** Extend the SheetJS tool for customers, legacy IDs,
+  client-number generation/mapping, branches, services, staff, historical
+  appointments, and approved status normalization. Support dry run,
+  duplicate detection, idempotency, and row-level reports.
+- **Acceptance criteria:** A fixture imports correctly; duplicate/invalid/
+  failed rows are separated; rerunning does not duplicate records; the
+  source workbook is byte-identical.
+- **Notes:** Do not import payments/subscriptions unless the client
+  supplies reliable columns and approves the mapping.
 
-    | Excel      | Target      | Transformation                                    |
-    | ---------- | ----------- | ------------------------------------------------- |
-    | Patient Name | Patient (profiles.full_name) | Trim/normalize text                     |
-    | Mobile     | MobileNumber | Normalize to E.164 country/phone format           |
-    | Email      | Email        | Lowercase + validate                              |
-    | Treatment  | Service      | Map legacy name → configured service name         |
-    | Appt Date  | AppointmentDate | Convert to DB date                             |
-    | Appt Time  | StartTime    | Convert to standard time                          |
-    | Status     | Status       | Map legacy status → system status enum (SRS §10)  |
-  - Validate required fields; detect duplicates (patients and appointments) via agreed matching rules (T35).
-  - Insert valid records; **never modify the source Excel file** (SRS §2).
-  - Produce a migration report: imported / skipped / duplicate / failed counts + row-level detail.
-  - Dry-run mode (SQLite or a staging Supabase project) before production (SRS §13 "run in controlled environment").
-- **Acceptance criteria:**
-  - A sample Excel fixture migrates correctly in dry-run; report shows correct buckets.
-  - Migration is idempotent-enough (re-running doesn't duplicate already-imported patients/appointments).
-  - Source file byte-identical after migration.
-- **Notes:** The legacy Excel file itself is NOT in the repo — the clinic must supply it (T35). Build and test against a generated sample that follows the SRS column structure. After migration, Excel is read-only forever (SRS §2/§22).
+#### T26 - Migration admin UI
 
----
-
-#### T26 — Migration Admin UI (upload, run, view results)
 - **Owner:** Person 2
 - **Priority:** 7
-- **Dependencies:** T25, T18, T23 (results endpoint)
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Admin-only screen: upload an Excel file (drag & drop), configured mapping preview, run migration (dry-run vs live), view the migration report (imported/skipped/duplicate/failed) (SRS §14).
-  - Show per-row errors for the failed/skipped rows.
-- **Acceptance criteria:**
-  - End-to-end: upload → migrate → report rendered.
-  - Guarded to admin.
-- **Notes:** Person 1 owns the engine (T25); Person 2 owns this screen.
+- **Dependencies:** T18, T23, T25
+- **Status:** Not Started
+- **Description:** Admin-only upload, mapping preview, dry-run/live choice,
+  run state, result counts, row errors, and downloadable report.
+- **Acceptance criteria:** Upload -> validate -> migrate -> report works
+  end-to-end and is guarded by admin/RLS.
 
----
+### Milestone G - Notifications and localization
 
-### MILESTONE G — Notifications & Internationalization (SRS §15, §18)
+#### T27 - Notification service
 
-#### T27 — Notifications Service (confirmations, reminders, cancellations)
 - **Owner:** Person 1
 - **Priority:** 7
-- **Dependencies:** T14, T16, T5
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Trigger on: booking created (confirmation), before-appointment reminder, cancellation confirmation, rescheduling confirmation (SRS §15).
-  - Channel abstraction: Email (Supabase Auth email / third-party), SMS, WhatsApp — configurable provider per T35; default to Email in MVP.
-  - Record notification status in `notifications` (SRS §15 "Notification status should be recorded").
-  - Insert in-app notification rows for the bell UI (T28).
-- **Acceptance criteria:**
-  - Booking → confirmation email + in-app notification created (status recorded).
-  - Cancellation → cancellation email + in-app notification.
-  - Missing/invalid provider gracefully logged, never crashes booking.
-- **Notes:** Provider keys = env/secrets, never in frontend.
+- **Dependencies:** T5, T14, T16
+- **Status:** Not Started
+- **Description:** Confirmation/reminder/cancellation/reschedule,
+  payment, refund, subscription renewal/failure, and nutrition-plan
+  notifications through in-app and client-selected external channels.
+- **Acceptance criteria:** Events create one auditable notification;
+  retries are safe; provider failure does not duplicate a booking or
+  charge.
 
----
+#### T28 - In-app notifications UI
 
-#### T28 — In-App Notifications UI
 - **Owner:** Person 2
 - **Priority:** 7
 - **Dependencies:** T27
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Notification bell in the app shell: unread count badge, list of in-app notifications, expand to read, mark-as-read.
-  - Link notifications to the relevant appointment.
-- **Acceptance criteria:**
-  - Booking/cancel/reschedule generates a notification visible to the right user.
-  - Unread badge clears on read.
-- **Notes:** Pure UI over T27's `notifications` table.
+- **Status:** Not Started
+- **Description:** Notification bell/list, unread count, read state, and
+  links to appointment/payment/subscription/nutrition records.
+- **Acceptance criteria:** Relevant users see events, unread state clears,
+  and unauthorized records cannot be opened.
 
----
+#### T29 - Arabic, English, and RTL
 
-#### T29 — Internationalization: Arabic + English + RTL
 - **Owner:** Person 2
-- **Priority:** 6 (parallel with other UI tasks)
+- **Priority:** 6
 - **Dependencies:** T1
-- **Status:** ⬜ Not Started
-- **Description:**
-  - i18next: EN + AR locale files for every screen, form label, status, toast, error message (SRS §18).
-  - Full RTL: dir=rtl layout, mirrored icons/navigation, Arabic pluralization, date/number formatting (date-fns locale, Gregorian + optional Hijri display).
-  - Language switcher persisted on the profile; default from `preferred_language`.
-- **Acceptance criteria:**
-  - Toggling language flips the entire app (layout direction + content) without reload artifacts.
-  - Every user-facing string is translated (audit by searching for hard-coded English in JSX).
-- **Notes:** Do this early enough that new screens are written EN+AR from day one.
+- **Status:** Not Started
+- **Description:** Translate every screen, form, error, status, payment,
+  subscription, nutrition, and disclaimer string. Support RTL, localized
+  date/number/currency formatting, and persisted language preference.
+- **Acceptance criteria:** A language toggle flips the full app without
+  layout artifacts; no user-facing hard-coded English remains.
 
----
+### Milestone H - PWA, security, and baseline QA
 
-### MILESTONE H — PWA, Security, QA, Deployment (SRS §17, §18, §19)
+#### T30 - PWA and shared mobile-ready shell
 
-#### T30 — PWA: Installable "real app" feel on mobile
 - **Owner:** Person 2
 - **Priority:** 7
-- **Dependencies:** T2
-- **Status:** ⬜ Not Started
-- **Description:**
-  - `vite-plugin-pwa`: web manifest (name "The Perfect Look", icons 192/512), theme color, standalone display, service worker with app-shell caching.
-  - On phones: "Add to Home Screen" / install prompt → opens full-screen like a native app (MVP requirement).
-  - Mobile viewport/theme-color meta, safe-area handling, bottom-nav affordance, touch-friendly hit areas.
-  - Offline shell: cached app loads; data ops show friendly offline state.
-- **Acceptance criteria:**
-  - On a phone browser the install banner appears; installed to home screen and opens standalone with no browser chrome.
-  - Lighthouse PWA installability passes.
-- **Notes:** This delivers the "website but works like a mobile app" requirement.
+- **Dependencies:** T1, T2
+- **Status:** Not Started
+- **Description:** Configure manifest/icons, installability, app-shell
+  caching, standalone display, safe areas, touch targets, offline state,
+  and mobile navigation.
+- **Acceptance criteria:** PWA installs and opens standalone on a phone;
+  Lighthouse installability passes; offline shell has a friendly data
+  error state.
+- **Notes:** This is the demo mobile experience. T45 tracks the native
+  app.
 
----
+#### T31 - Security, privacy, and validation hardening
 
-#### T31 — Security Hardening & Validation Pass
 - **Owner:** Person 1
 - **Priority:** 8
-- **Dependencies:** T5, T18, T25
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Server-side (Supabase RPC/edge) validation for all writes (SRS §17 "server-side validation").
-  - HTTPS enforced (GitHub Pages + Supabase are HTTPS; document + verify no http links) (SRS §17).
-  - No DB credentials reach the browser — only Supabase URL + **anon** key; service-role key server-side only (SRS §17).
-  - Audit logging for important admin actions writes to `audit_logs` (SRS §17).
-  - RLS final audit: enumerate tables and confirm the least-privilege policy set.
-  - Patient records never publicly exposed; no public routes leak data (SRS §17).
-  - Backup & recovery: document Supabase PITR/export procedure (SRS §17).
-  - UAE healthcare/privacy note: dependency/checklist in docs (SRS §17).
-- **Acceptance criteria:**
-  - Attempts to read/write others' data fail at DB level (tested).
-  - Admin actions appear in `audit_logs`.
-  - Secret/key leakage scan clean (`rg` for keys, no `.env` committed).
-- **Notes:** Pair with T32 for verification.
+- **Dependencies:** T5, T18, T25, T37
+- **Status:** Not Started
+- **Description:** Final RLS/branch-scope audit, server-side validation,
+  audit logs, secret scan, HTTPS, backups/recovery, rate limits, health
+  data policies, payment webhook security, consent, retention, and UAE
+  privacy review checklist.
+- **Acceptance criteria:** Cross-customer/branch access tests fail safely;
+  admin/payment/nutrition actions are auditable; no secrets are exposed;
+  recovery and privacy documents exist.
 
----
+#### T32 - Core appointment end-to-end testing
 
-#### T32 — End-to-End Testing vs MVP Acceptance Criteria
-- **Owner:** P1 + P2 (shared; run as two PRs — P1 drafts the script + fixes backend, P2 fixes UI)
+- **Owner:** P1 + P2
 - **Priority:** 8
-- **Dependencies:** T14, T16, T17, T19, T25, T26
-- **Status:** ⬜ Not Started
-- **Description:**
-  Verify every line of SRS §19 in the live app + record results:
-  1. Patient creates an account.
-  2. Patient logs in and out.
-  3. Patient views active services.
-  4. Patient views available dates and slots.
-  5. Patient books an available appointment.
-  6. System prevents double booking (parallel test).
-  7. Booking stored in the online database.
-  8. Patient views appointment history and upcoming.
-  9. Patient cancels / reschedules per configured rules.
-  10. Staff views and manages bookings.
-  11. Legacy Excel data validates & imports into the online database.
-  12. Excel NOT used for new transactions after migration.
-  13. Unauthorized users cannot access staff/admin functions.
-- **Acceptance criteria:**
-  - All 13 criteria pass with evidence (screen recordings/screenshots) recorded in the PR description.
-- **Notes:** Any failure → new fix PR referencing the failing criterion.
+- **Dependencies:** T14, T16, T17, T19, T25, T26, T37
+- **Status:** Not Started
+- **Description:** Verify registration, client number, services,
+  branches, availability, booking concurrency, appointment lifecycle,
+  staff operations, migration, RLS, and Arabic/English against the v2
+  acceptance criteria.
+- **Acceptance criteria:** Test evidence covers each core case in a
+  staging/live build; every failure has a linked fix task.
 
----
+#### T33 - Browser/PWA client demo deployment
 
-#### T33 — Final Deployment & Client Demo Prep
-- **Owner:** P1 + P2 (shared)
+- **Owner:** P1 + P2
 - **Priority:** 9
-- **Dependencies:** T30, T31, T32
-- **Status:** ⬜ Not Started
-- **Description:**
-  - Final deploy to GitHub Pages from `main` (live URL: `https://yahiaAlhindi.github.io/The-Perfect-Look-/`).
-  - Verify on phone (install + standalone) and desktop.
-  - Create **demo accounts** (demo patient, demo staff, demo admin) for the client.
-  - Prepare a short client-facing demo script (walking through the MVP acceptance flows).
-- **Acceptance criteria:**
-  - Live URL reachable from outside; all core flows work in production build.
-  - Demo accounts active; client can log in.
-- **Notes:** This is the "share link with the client in another country" milestone — the handoff point for approval to proceed to production scope.
+- **Dependencies:** T30, T31, T32, T46
+- **Status:** Not Started
+- **Description:** Deploy the approved website/PWA build, create safe demo
+  accounts/data, verify phone/desktop behavior, and prepare a client demo
+  script covering branches, booking, client number, and catalogue.
+- **Acceptance criteria:** External client can open the URL, sign in with
+  demo accounts, install the PWA, and complete the approved demo flows.
+- **Notes:** Do not use live card credentials or real health data in the
+  demo.
 
----
+#### T34 - Documentation and handover
 
-#### T34 — Documentation & Handover
 - **Owner:** Person 2
 - **Priority:** 9
 - **Dependencies:** T33
-- **Status:** ⬜ Not Started
-- **Description:**
-  - README: project overview, setup (env vars, Supabase config), role accounts, deploy instructions, and how to run the migration tool.
-  - Update this task list: mark statuses, note closed/open decisions.
-  - Short handover doc for the future production/Expo build (what's reusable: API layer, RBAC, availability engine).
-- **Acceptance criteria:**
-  - A fresh developer can go from clone → running app in under 15 minutes using the README.
-- **Notes:** FINAL task; close it only when everything else is `🟢 Done`.
+- **Status:** Not Started
+- **Description:** Update README, environment setup, Supabase/RLS notes,
+  migration runbook, roles, client demo script, brand/content workflow,
+  payment/subscription runbook, and native-mobile handover.
+- **Acceptance criteria:** A new developer can run the project from the
+  README; all open decisions and release gates are documented.
 
----
+### Milestone I - Client input and requirements gate
 
-### MILESTONE I — Open Items & Client Input
+#### T35 - Open clinic decisions and release gate
 
-#### T35 — Open Configuration Items (needs clinic decisions) — DATA GATEKEEPER
-- **Owner:** Person 1 (tracks; clinic answers)
-- **Priority:** Ongoing
+- **Owner:** Person 1 tracks; clinic/client answers
+- **Priority:** Ongoing / blocking
 - **Dependencies:** none
-- **Status:** 🟡 Needs Input
-- **Description:**
-  These SRS §21 items are required to finalize migrations, availability, and prices. Track them; anything blocked by them stays `🟡 Needs Input` with a note.
-  1. Final list of bookable treatments/services.
-  2. Duration for each service.
-  3. Pricing + whether price is displayed publicly.
-  4. Doctors/therapists assigned per service.
-  5. Clinic working hours + holidays.
-  6. Slot interval (default 30 min).
-  7. Cancellation/rescheduling policy (notice hours, windows).
-  8. Multiple treatments per booking (yes/no).
-  9. Online payment required (default: No for MVP).
-  10. Notification channels to activate (Email / SMS / WhatsApp) + providers.
-  11. Final online database/schema details (if provided, else MVP schema stands).
-  12. The actual legacy Excel file + exact column structure (required for T25).
-  13. Login identifier: email only, or email AND mobile (SRS §6 decision).
-  14. UAE privacy/consent texts for Terms & Privacy Policy pages.
-- **Status rules:** This task never goes `🟢 Done` until all items have answers (or are explicitly "defer to next phase"). Tick answered items in the Notes.
-- **Notes:** Defaults used until answered: 30-min slots, Mon–Sat 10:00–20:00, prices hidden behind "Contact us", No payment, Email-only notifications, email+password login, en/ar.
+- **Status:** Needs Input
+- **Description:** Obtain decisions for:
+  1. final services/packages, English/Arabic copy, duration, buffers,
+     branch pricing, and provider assignments;
+  2. exact branches, addresses, contacts, hours, holidays, slot interval,
+     capacity, and branch policies;
+  3. public price visibility, VAT/fees, deposits, pay-at-clinic,
+     cancellations, refunds, and no-shows;
+  4. payment provider, supported methods, sandbox/live credentials, and
+     webhook ownership;
+  5. monthly subscription plans, prices, entitlements, grace, trial,
+     cancellation, and basic-calculator access;
+  6. nutritionist-approved formulas, target ranges, meal content,
+     allergies, disclaimers, and review workflow;
+  7. client-number format and legacy matching rules;
+  8. login identifier, OTP, notification providers, and channels;
+  9. native-app-first versus PWA-demo decision, store accounts, and
+     release ownership;
+  10. Terms, Privacy Policy, health consent, marketing consent, and
+      retention/deletion requirements;
+  11. legacy Excel workbook, columns, and historical payment/subscription
+      migration scope.
+- **Acceptance criteria:** Every item is answered or explicitly deferred
+  to a named later release. Answers are recorded in the SRS and task
+  notes.
+- **Notes:** Until answers arrive, use labelled demo defaults only. Any
+  task that needs a missing decision must be marked Needs Input rather
+  than quietly guessing.
 
----
+#### T36 - Client website, service catalogue, and brand discovery
 
-## 5. Execution Order (Recommended Sequence)
+- **Owner:** Person 2 with client
+- **Priority:** Immediate, before final UI/content
+- **Dependencies:** none
+- **Status:** Needs Input
+- **Description:** Receive and review the client website/link, extract the
+  authoritative services, categories, descriptions, prices, branch
+  details, brand colors, logo, app-icon direction, images, and copy.
+  Produce a content/asset inventory with unresolved conflicts for client
+  approval.
+- **Acceptance criteria:** The source link is recorded; every planned
+  service and branch has a source or explicit TBD; approved brand assets
+  and content are versioned; discrepancies are listed for T35.
+- **Notes:** The user said a link will be provided. This task cannot be
+  marked Done until the link and approval are available.
 
-Because P1 and P2 work in parallel threads/PRs:
+### Milestone J - Multi-branch and customer identity v2
 
-```
-Phase 1 (parallel):  T1 (P2)  ·  T2 (P1)  ·  T35 tracking (P1, ongoing)
-Phase 2 (parallel):  T3 (P1)  ·  T29 i18n base (P2, after T1)
-Phase 3 (parallel):  T4 (P1)  ·  T5 (P1)  ·  T6 (P2, waits on T5)
-Phase 4 (parallel):  T8 (P1)  ·  T7 (P2)  ·  T9 (P1)
-Phase 5 (parallel):  T12 (P1 core engine)  ·  T18 (P1 RBAC)  ·  T10 (P2)
-Phase 6 (parallel):  T13 (P2, waits on T12)  ·  T14 (P1)
-Phase 7 (parallel):  T15 (P2, waits on 13+14)  ·  T16 (P1)  ·  T20 (P1, waits on 18)
-Phase 8 (parallel):  T17 (P2)  ·  T11 (P2)  ·  T21 (P2)  ·  T19 (P2)
-Phase 9 (parallel):  T22 (P2)  ·  T23 (P1)  ·  T25 (P1)  ·  T24 (P2)
-Phase 10 (parallel): T26 (P2, waits on 25)  ·  T27 (P1)  ·  T30 (P2)
-Phase 11 (parallel): T28 (P2)  ·  T31 (P1)  ·  T32 (P1+P2)
-Phase 12:            T33 (P1+P2 deployment & demo)  →  T34 (final document)
-```
+#### T37 - Multi-branch, client-number, and pricing schema extension
 
-Critical path (can't be skipped): `T3 → T4/T5 → T9 → T12 → T14 → T16 → T32 → T33`. Anything on this path that stalls holds up the demo — prioritize it.
+- **Owner:** Person 1
+- **Priority:** 1
+- **Dependencies:** T3, T4
+- **Status:** Not Started
+- **Description:** Add branches, branch hours/closures, staff-branch
+  assignments, service-branch availability/pricing, immutable client
+  number, branch on appointments, branch-scoped RLS, price snapshots,
+  package/add-on relationships, and migration mappings.
+- **Acceptance criteria:**
+  - Demo Dubai and Abu Dhabi branches seed idempotently.
+  - Client numbers are unique, immutable, collision-safe, searchable,
+    and visible through authorized APIs.
+  - A user cannot read/write another branch's protected data.
+  - Appointment and price snapshots preserve historical truth.
+- **Notes:** Use demo branches until T35/T36 supplies the official data.
 
----
+### Milestone K - Payments and subscriptions
 
-## 6. Status Legend
+#### T38 - Payment domain, checkout API, and webhook integration
+
+- **Owner:** Person 1
+- **Priority:** 6
+- **Dependencies:** T18, T20, T35, T37
+- **Status:** Needs Input
+- **Description:** Implement provider adapter, checkout/payment intents,
+  full/deposit/pay-at-clinic options, payment status, invoices, refunds,
+  manual payment, signed webhooks, idempotency, retries, and appointment
+  payment transitions.
+- **Acceptance criteria:** Sandbox success/failure/refund/replay flows
+  update the database exactly once; appointment status cannot claim paid
+  before provider confirmation; no card details are stored.
+- **Notes:** Provider selection and credentials are required before live
+  integration. A provider-neutral domain contract may be prepared first.
+
+#### T39 - Customer checkout and finance UI
+
+- **Owner:** Person 2
+- **Priority:** 6
+- **Dependencies:** T38, T1
+- **Status:** Not Started
+- **Description:** Price summary, payment method, hosted checkout/redirect,
+  success/failure/pending states, receipts, balances, refund messages,
+  and finance/admin payment views.
+- **Acceptance criteria:** Customer never sees a trusted client-side price;
+  sandbox payment states are clear and localized; finance roles see only
+  permitted records.
+
+#### T40 - Subscription plans and entitlement API
+
+- **Owner:** Person 1
+- **Priority:** 6
+- **Dependencies:** T35, T37, T38
+- **Status:** Needs Input
+- **Description:** Add plans, monthly recurring billing, subscription
+  status transitions, renewal/failure/grace/cancel/pause/refund events,
+  invoices, webhook replay, and entitlement checks for nutrition features.
+- **Acceptance criteria:** Active, past-due, cancelled, expired, and
+  payment-failed fixtures produce the correct access; duplicate webhooks
+  are harmless; all transitions are audited.
+
+#### T41 - Subscription and membership UI
+
+- **Owner:** Person 2
+- **Priority:** 6
+- **Dependencies:** T39, T40
+- **Status:** Not Started
+- **Description:** Plans/comparison, checkout entry, active membership,
+  next billing date, invoice history, cancel/pause, renewal failure,
+  expired-access, and entitlement messaging.
+- **Acceptance criteria:** The UI reflects server entitlement after every
+  test event and never unlocks premium nutrition features from local state
+  alone.
+
+### Milestone L - Nutrition and wellness
+
+#### T42 - Versioned nutrition calculation engine
+
+- **Owner:** Person 1
+- **Priority:** 6
+- **Dependencies:** T3, T18, T35
+- **Status:** Needs Input
+- **Description:** Implement tested, unit-aware, versioned BMI, BMR, TDEE,
+  calorie target, protein/fat/carbohydrate, weight goal, body-fat/muscle
+  guidance, validation limits, and progress calculations. Store formula
+  version and input/output snapshot.
+- **Acceptance criteria:** Approved fixtures match the nutritionist's
+  expected results; invalid/extreme inputs are handled safely; outputs
+  carry the estimate/disclaimer; calculations cannot leak across users.
+- **Notes:** Do not copy an open-source implementation until its license
+  and formula suitability are reviewed. The client/nutritionist must
+  approve formulas and ranges.
+
+#### T43 - Nutrition profile, meal plan, and admin content API
+
+- **Owner:** Person 1 + nutritionist reviewer
+- **Priority:** 7
+- **Dependencies:** T20, T40, T42, T35
+- **Status:** Needs Input
+- **Description:** Store consented measurements/goals, dietary
+  preferences/allergies, plan versions, meals, portions, substitutions,
+  eating times, weekly schedules, progress check-ins, nutritionist
+  review, and subscription entitlement checks.
+- **Acceptance criteria:** Only an active entitlement can access the
+  configured premium plan; staff access follows role; plan revisions are
+  versioned; nutritionist approval is recorded.
+
+#### T44 - Customer nutrition and wellness UI
+
+- **Owner:** Person 2
+- **Priority:** 7
+- **Dependencies:** T41, T42, T43, T1
+- **Status:** Not Started
+- **Description:** Onboarding measurements/goals, calculator results,
+  BMI/calorie/macro explanation, subscription gate, eating schedule,
+  meal plan, progress updates, disclaimers, and error/empty states.
+- **Acceptance criteria:** Customer can complete the approved fixture flow
+  in English/Arabic; locked/expired subscription behavior is clear; no
+  health data appears in public URLs or unauthorized screens.
+
+### Milestone M - Native mobile and final release
+
+#### T45 - Native iOS/Android customer app shell
+
+- **Owner:** Person 2 + Person 1
+- **Priority:** 7
+- **Dependencies:** T29, T30, T37, T35
+- **Status:** Needs Input
+- **Description:** Create the Expo/React Native app shell, navigation,
+  authentication, shared API client, brand assets, branch/service browse,
+  booking, appointments, checkout, subscription, and nutrition routes.
+  Reuse domain contracts and tests from the web implementation.
+- **Acceptance criteria:** App builds for iOS and Android, authenticates
+  against the same backend, respects RLS/entitlements, supports RTL,
+  handles offline/error states, and passes internal device testing.
+- **Notes:** Store accounts, app ownership, and whether this is required
+  for the first demo are T35 decisions.
+
+#### T46 - Approved brand and catalogue implementation
+
+- **Owner:** Person 2
+- **Priority:** 4
+- **Dependencies:** T1, T9, T10, T11, T36
+- **Status:** Needs Input
+- **Description:** Replace placeholders with approved logo, colors,
+  typography, app icon, imagery, service copy, branch content, prices,
+  disclaimers, and localized catalogue data.
+- **Acceptance criteria:** Client approves a visual/content review on
+  website, PWA, and relevant mobile screens; no fabricated service or
+  price remains in the production seed.
+
+#### T47 - Full v2 end-to-end and launch-readiness test
+
+- **Owner:** P1 + P2
+- **Priority:** 8
+- **Dependencies:** T31, T32, T38, T40, T41, T44, T45, T46
+- **Status:** Not Started
+- **Description:** Test the complete website/PWA/native path: client
+  number, branches, services, booking, payment, refunds,
+  subscription lifecycle, calculations, meal plans, notifications,
+  branch-scoped RBAC, migration, privacy, and audit evidence.
+- **Acceptance criteria:** Every SRS v2 MVP criterion passes with
+  screenshots/logs/test reports; open defects are triaged; client signs
+  off the release candidate.
+
+#### T48 - Production release and handover
+
+- **Owner:** P1 + P2
+- **Priority:** 9
+- **Dependencies:** T33, T34, T47
+- **Status:** Not Started
+- **Description:** Configure production domains, Supabase settings,
+  payment production credentials, monitoring, backups, notification
+  providers, native app signing, TestFlight/Play release, store
+  metadata, support/runbooks, and final client handover.
+- **Acceptance criteria:** Approved release is deployed; mobile builds are
+  available to the intended audience; production secrets are protected;
+  rollback/support procedures and ownership are documented.
+
+## 6. Recommended execution order
+
+The current repository can continue from its completed baseline as follows:
+
+Phase 1: T1 + T36 (design/content discovery in parallel)
+Phase 2: T37 + T29 + T6/T8 (schema extension, localization, account UI/API)
+Phase 3: T18 + T12 + T13 (RBAC and branch availability)
+Phase 4: T14 + T15 + T16 + T17 (booking and lifecycle)
+Phase 5: T10 + T11 + T19 + T20 + T21 + T22 + T23 + T24 + T25 + T26 (catalogue, operations, and migration)
+Phase 6: T27 + T28 + T30 + T31 + T32 (notifications, PWA, security, QA)
+Phase 7: T35 decisions + T38 + T39 (payment)
+Phase 8: T40 + T41 + T42 + T43 + T44 (subscription and wellness)
+Phase 9: T46 + T33 (approved content and browser/PWA demo)
+Phase 10: T45 + T47 + T48 (native app and production release)
+
+Critical paths:
+
+- **Booking:** T37 -> T12 -> T14 -> T16 -> T18/T20 -> T32.
+- **Payment:** T35 -> T37/T18/T20 -> T38 -> T39.
+- **Nutrition:** T35 -> T38 -> T40 -> T41, and T35 -> T42 -> T43 -> T44.
+- **Client-ready release:** T36/T46 -> T33, then T45 -> T47 -> T48.
+
+## 7. Status legend
 
 | Status | Meaning |
-| ------ | ------- |
-| ⬜ Not Started | Dependencies done; ready to pick up in a thread |
-| 🔵 In Progress | Actively being worked on in a thread |
-| 🟢 Done | Merged via PR + acceptance criteria verified |
-| 🟡 Needs Input | Waiting on client data/decision (see T35) |
+| --- | --- |
+| Not Started | Work has not begun |
+| Needs Input | Waiting on client/clinic/provider information or approval |
+| In Progress | Work is active in a branch/thread |
+| Done | PR merged and acceptance criteria verified |
 
-**Dependency rule reminder:** Before starting any task, every item in its **Dependencies** list must be `🟢 Done`; otherwise state *"I will not start [TXX] until [TYY] is 🟢 Done"* and wait.
-
----
-
-*Generated from `The_Perfect_Look_App_Requirements_UPDATED.md` (SRS v1). Update statuses in place as tasks complete.*
+Dependency reminder: a task must not start until every listed dependency
+is Done. T35 and T36 are intentionally open because the client website,
+service list, brand assets, policies, provider, and nutrition approvals
+have not yet been supplied.
