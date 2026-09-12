@@ -39,6 +39,56 @@ export interface Service {
   sort_order: number
 }
 
+/**
+ * Payload for creating a service (admin, T9). Full create: name,
+ * duration_minutes and price are required; the rest default.
+ */
+export interface ServiceInput {
+  name: string
+  description?: string | null
+  duration_minutes: number
+  price: number
+  currency?: string
+  active?: boolean
+  assigned_staff_type?: string | null
+  booking_rules?: Record<string, unknown>
+  sort_order?: number
+}
+
+/** Partial update payload for editing a service (admin, T9). */
+export interface ServicePatch {
+  name?: string
+  description?: string | null
+  duration_minutes?: number
+  price?: number
+  currency?: string
+  active?: boolean
+  assigned_staff_type?: string | null
+  booking_rules?: Record<string, unknown>
+  sort_order?: number
+}
+
+/**
+ * Patient-facing view of a service (T9). `price_visible` reflects the
+ * clinic's `price_visibility` app_setting (T35) plus per-service
+ * `price_on_request`; when false, `price`/`currency` are null so the
+ * UI shows "Contact us" instead of a hard-coded value.
+ */
+export interface PublicService extends Omit<Service, 'price' | 'currency'> {
+  price: number | null
+  currency: string | null
+  price_visible: boolean
+}
+
+/** Insert payload for `audit_logs` (admin CRUD writes, T9/T31). */
+export interface AuditLogInsert {
+  admin_user_id?: string | null
+  action: string
+  entity: string
+  entity_id?: string | null
+  details?: Record<string, unknown>
+}
+
 export interface Staff {
   id: string
   profile_id: string
@@ -122,14 +172,14 @@ export interface Database {
   public: {
     Tables: {
       profiles: { Row: Profile }
-      services: { Row: Service }
+      services: { Row: Service; Insert: ServiceInput; Update: ServicePatch }
       staff: { Row: Staff }
       staff_availability: { Row: StaffAvailability }
       blocked_periods: { Row: BlockedPeriod }
       holidays: { Row: Holiday }
       appointments: { Row: Appointment }
       notifications: { Row: Notification }
-      audit_logs: { Row: AuditLog }
+      audit_logs: { Row: AuditLog; Insert: AuditLogInsert; Update: Partial<AuditLogInsert> }
       app_settings: { Row: AppSetting }
     }
     Functions: {
