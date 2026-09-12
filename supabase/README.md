@@ -11,6 +11,7 @@ Supabase schema source of truth for The Perfect Look (MVP, task T3).
 | `seed.sql`                       | Idempotent admin-account seed (call `seed_admin()` with your credentials) |
 | `tests/rls_appointments.sql`     | RLS acceptance test (patient isolation, RBAC, SRS §10 enum)   |
 | `tests/seed_data.sql`            | T4 seed acceptance test (services, settings, staff, holidays) |
+| `tests/services_api.sql`         | T9 services API test (active-only reads, admin-only writes, instant patient reflection) |
 
 ## What the schema contains
 

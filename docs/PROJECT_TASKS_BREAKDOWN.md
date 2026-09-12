@@ -243,7 +243,7 @@ Owns: design system, auth pages, profile, services browsing, availability picker
 - **Owner:** Person 1
 - **Priority:** 3
 - **Dependencies:** T3, T4
-- **Status:** ⬜ Not Started
+- **Status:** 🟢 Done
 - **Description:**
   - `GET /services` — active services only for patients (SRS §8 `active` flag).
   - `GET /services/:id` — service detail (description, duration, price visibility per T35, assigned staff type, booking rules).
@@ -252,7 +252,7 @@ Owns: design system, auth pages, profile, services browsing, availability picker
 - **Acceptance criteria:**
   - Frontend never hard-codes service lists; everything comes from the API.
   - Editing a service in admin is reflected on the patient side immediately.
-- **Notes:** Feeds T10 (patient UI) and T11/T12 (admin UI).
+- **Notes:** Feeds T10 (patient UI) and T11/T12 (admin UI). Implemented as `web/src/lib/supabase/services.ts` (`listServices`, `getService`, `listServicesAdmin`, `createService`, `updateService`, `deactivateService`); price visibility is read from `app_settings.price_visibility` (T35 default `contact_us`) + per-service `price_on_request`; write RBAC is enforced server-side by RLS (admin-only, `supabase/tests/services_api.sql`); admin writes also log to `audit_logs` (T31). Typecheck + production build green. Live DB e2e run pending project creation (same outstanding item as T3/T4/T5).
 
 ---
 
