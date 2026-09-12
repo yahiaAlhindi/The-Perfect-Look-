@@ -110,7 +110,7 @@ Owns: design system, auth pages, profile, services browsing, availability picker
 - **Owner:** Person 1
 - **Priority:** 1
 - **Dependencies:** T2 (repo structure needed to hold `supabase/` migrations)
-- **Status:** ⬜ Not Started
+- **Status:** 🟢 Done
 - **Description:**
   - Create the Supabase project (online database = System of Record, SRS §12).
   - Write SQL migrations covering (SRS §12 + §20):
@@ -133,7 +133,7 @@ Owns: design system, auth pages, profile, services browsing, availability picker
   - `supabase/schema.sql` + seed script committed in the PR.
   - RLS blocks a patient from reading another patient's appointments (verified via an SQL test).
   - Appointment status values match SRS §10 exactly.
-- **Notes:** The SRS says "final schema will be incorporated once provided by the project owner" (§20) — this schema is the MVP proposal and must be stable before T4–T27 start.
+- **Notes:** The SRS says "final schema will be incorporated once provided by the project owner" (§20) — this schema is the MVP proposal and must be stable before T4–T27 start. Merged via PR #4. End-to-end verification against the live Supabase project is pending project creation + `supabase db push` (not run on the build machine).
 
 ---
 
@@ -168,7 +168,7 @@ Owns: design system, auth pages, profile, services browsing, availability picker
 - **Owner:** Person 1
 - **Priority:** 2
 - **Dependencies:** T3
-- **Status:** ⬜ Not Started
+- **Status:** 🟢 Done
 - **Description:**
   - Wire Supabase Auth: sign up (email + password), sign in with email OR mobile number (business decision T35), sign out, send password reset, update password.
   - On sign-up trigger (DB trigger/edge function): insert into `profiles` with role=patient; enforce mobile/email uniqueness on both `auth.users` and `profiles`.
@@ -180,7 +180,7 @@ Owns: design system, auth pages, profile, services browsing, availability picker
   - Every new auth user automatically gets a `profiles` row.
   - Duplicate email/mobile returns a clear, mapped error (no raw DB errors).
   - Passwords are stored hashed by Supabase; never plain text (SRS §6/§17).
-- **Notes:** OTP is explicitly "optional later" per SRS §6 — skipped in MVP.
+- **Notes:** OTP is explicitly "optional later" per SRS §6 — skipped in MVP. Merged via PR #5; typecheck + build green in CI. Live DB end-to-end run (register → login → logout → reset) is pending project creation + `supabase db push` (same outstanding item as T3).
 
 ---
 
