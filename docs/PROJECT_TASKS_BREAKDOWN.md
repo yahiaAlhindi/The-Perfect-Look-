@@ -141,7 +141,7 @@ Owns: design system, auth pages, profile, services browsing, availability picker
 - **Owner:** Person 1
 - **Priority:** 1
 - **Dependencies:** T3
-- **Status:** ⬜ Not Started
+- **Status:** 🟢 Done
 - **Description:**
   - Seed the services from SRS §8 with sensible durations/prices (flagged in T35 for client confirmation):
     1. Skin Care Treatment
@@ -156,9 +156,9 @@ Owns: design system, auth pages, profile, services browsing, availability picker
   - Seed `app_settings`: working hours, slot interval (e.g. 30 min), cancellation notice period, rescheduling window, currency (default AED), holiday calendar.
   - Idempotent (safe to re-run).
 - **Acceptance criteria:**
-  - Services, staff, and settings visible via direct SQL query.
+  - Services, staff, and settings visible via direct SQL query (verified by `supabase/tests/seed_data.sql`).
   - Settings read from `app_settings`, not hard-coded in the app.
-- **Notes:** Values are demo defaults until the clinic answers T35.
+- **Notes:** Values are demo defaults until the clinic answers T35. Migration `003_seed_data.sql` is idempotent (re-run safe, preserves clinic edits). Live `supabase db push` + re-run of the seed test is pending project creation (same outstanding item as T3/T5).
 
 ---
 

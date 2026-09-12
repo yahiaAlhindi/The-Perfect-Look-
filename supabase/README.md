@@ -5,9 +5,12 @@ Supabase schema source of truth for The Perfect Look (MVP, task T3).
 | File                             | Purpose                                                        |
 | -------------------------------- | -------------------------------------------------------------- |
 | `migrations/001_schema.sql`      | Full schema migration — tables, enums, indexes, triggers, RLS  |
+| `migrations/002_auth_profiles.sql` | T5 auth support — contact normalisation, sign-up guard, login identifier resolver |
+| `migrations/003_seed_data.sql`   | T4 idempotent seed — services (SRS §8), demo staff + availability, `app_settings`, holidays |
 | `schema.sql`                     | Consolidated snapshot of the final schema (kept in sync)      |
 | `seed.sql`                       | Idempotent admin-account seed (call `seed_admin()` with your credentials) |
 | `tests/rls_appointments.sql`     | RLS acceptance test (patient isolation, RBAC, SRS §10 enum)   |
+| `tests/seed_data.sql`            | T4 seed acceptance test (services, settings, staff, holidays) |
 
 ## What the schema contains
 
