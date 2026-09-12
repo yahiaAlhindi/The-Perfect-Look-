@@ -1,0 +1,4 @@
+-- Placeholder for T3 (schema) migrations and T4 (seed).
+-- See docs/PROJECT_TASKS_BREAKDOWN.md for the planned tables
+-- (profiles, services, staff, staff_availability, blocked_periods,
+-- holidays, appointments, notifications, audit_logs, app_settings).
