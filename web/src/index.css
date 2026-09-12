@@ -1,0 +1,27 @@
+:root {
+  font-family: 'Segoe UI', system-ui, -apple-system, 'Noto Sans Arabic',
+    Arial, sans-serif;
+  color: #1a1a1a;
+  background-color: #ffffff;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app-shell {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  text-align: center;
+}
