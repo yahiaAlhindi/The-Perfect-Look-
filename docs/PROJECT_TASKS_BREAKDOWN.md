@@ -91,7 +91,7 @@ Owns: design system, auth pages, profile, services browsing, availability picker
 - **Owner:** Person 1
 - **Priority:** Must Start First (can start immediately)
 - **Dependencies:** none
-- **Status:** ⬜ Not Started
+- **Status:** 🟢 Done
 - **Description:**
   - Define repo layout: `/web` (frontend app), `/supabase` (SQL migrations + seed), `/tools` (migration script), `/docs` (this plan).
   - Add `vite-plugin-pwa` readiness config and `base` set for GitHub Pages sub-path `/The-Perfect-Look-/`.
