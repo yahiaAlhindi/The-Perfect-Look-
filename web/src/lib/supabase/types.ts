@@ -24,6 +24,48 @@ export interface Profile {
   preferred_language: string
   role: UserRole
   created_at: string
+  /**
+   * Permanent client number (T37). Optional until the multi-branch /
+   * client-number schema migration lands; the UI shows a placeholder
+   * when absent (T6/T7 note).
+   */
+  client_number?: string | null
+}
+
+/**
+ * Editable profile fields for `PUT /profile` (T8).
+ * `full_name`, `dob`, `gender` and `preferred_language` only — email
+ * and mobile changes are restricted/gated pending T35, and `role` is
+ * never self-assignable (guarded by DB triggers + RLS).
+ */
+export interface ProfileUpdate {
+  full_name: string
+  dob?: string | null
+  gender?: string | null
+  preferred_language?: string
+}
+
+/** Consent topics a customer can record or withdraw (T8). */
+export type ConsentType = 'terms_service' | 'marketing'
+
+/** Immutable consent record (version + timestamp, T8). */
+export interface ConsentRow {
+  id: string
+  user_id: string
+  consent_type: ConsentType
+  version: string
+  granted: boolean
+  source: string
+  created_at: string
+}
+
+/** Data-request record (T8: "request my data" entry point). */
+export interface DataRequestRow {
+  id: string
+  user_id: string
+  requested_at: string
+  status: 'received' | 'processing' | 'fulfilled'
+  notes: string | null
 }
 
 export interface Service {
@@ -171,7 +213,40 @@ export interface AppSetting {
 export interface Database {
   public: {
     Tables: {
-      profiles: { Row: Profile }
+      profiles: {
+        Row: Profile
+        Insert: {
+          id: string
+          full_name: string
+          mobile_number: string
+          email: string
+          dob?: string | null
+          gender?: string | null
+          preferred_language?: string
+          role?: UserRole
+          created_at?: string
+        }
+        Update: Partial<Omit<Profile, 'id' | 'role' | 'created_at'>>
+      }
+      consents: {
+        Row: ConsentRow
+        Insert: {
+          user_id: string
+          consent_type: ConsentType
+          version?: string
+          granted: boolean
+          source?: string
+        }
+        Update: never
+      }
+      data_requests: {
+        Row: DataRequestRow
+        Insert: {
+          user_id: string
+          notes?: string | null
+        }
+        Update: never
+      }
       services: { Row: Service; Insert: ServiceInput; Update: ServicePatch }
       staff: { Row: Staff }
       staff_availability: { Row: StaffAvailability }

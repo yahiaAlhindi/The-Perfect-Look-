@@ -1,0 +1,138 @@
+/* ============================================================================
+   THE PERFECT LOOK — DESIGN TOKENS
+   ----------------------------------------------------------------------------
+   This file is the SINGLE configuration layer for every brand and theme value.
+   No component hard-codes a color, radius, or font — everything is derived
+   from the custom properties below.
+
+   IMPORTANT: The `--brand-*` scale and font assignment are PLACEHOLDERS.
+   They must NOT be treated as the final palette. The approved client brand
+   assets arrive in T36 and are applied in T46 by simply replacing the values
+   in this file (see also src/config/brand.ts for asset URLs).
+   ========================================================================== */
+
+:root {
+  /* -----------------------------------------------------------------------
+   * BRAND  (PLACEHOLDER — swap with T36/T46 approved values)
+   * Neutral violet scale chosen as a testable stand-in only.
+   * --------------------------------------------------------------------- */
+  --brand-50: oklch(0.972 0.016 293.75);
+  --brand-100: oklch(0.943 0.029 294.59);
+  --brand-200: oklch(0.894 0.057 293.28);
+  --brand-300: oklch(0.811 0.111 293.57);
+  --brand-400: oklch(0.702 0.183 293.53);
+  --brand-500: oklch(0.606 0.25 292.72);
+  --brand-600: oklch(0.541 0.281 293.01);
+  --brand-700: oklch(0.491 0.27 292.58);
+  --brand-800: oklch(0.432 0.232 292.76);
+  --brand-900: oklch(0.38 0.189 293.75);
+  --brand-950: oklch(0.283 0.141 291.09);
+
+  /* Semantic brand surfaces derived from the scale */
+  --brand: var(--brand-600);
+  --brand-hover: var(--brand-700);
+  --brand-active: var(--brand-800);
+  --brand-soft: var(--brand-50);
+  --brand-soft-fg: var(--brand-800);
+  --brand-fg: oklch(0.985 0 0);
+
+  /* -----------------------------------------------------------------------
+   * SURFACE
+   * --------------------------------------------------------------------- */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+
+  /* -----------------------------------------------------------------------
+   * ACTIONS
+   * --------------------------------------------------------------------- */
+  --primary: var(--brand);
+  --primary-hover: var(--brand-hover);
+  --primary-foreground: var(--brand-fg);
+
+  --secondary: oklch(0.968 0.007 247.896);
+  --secondary-foreground: oklch(0.208 0.042 265.755);
+
+  --muted: oklch(0.968 0.007 247.896);
+  --muted-foreground: oklch(0.554 0.046 257.417);
+
+  --accent: oklch(0.968 0.007 247.896);
+  --accent-foreground: oklch(0.208 0.042 265.755);
+
+  /* -----------------------------------------------------------------------
+   * STATUS
+   * --------------------------------------------------------------------- */
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+
+  --success: oklch(0.596 0.145 163.225);
+  --success-foreground: oklch(0.985 0 0);
+
+  --warning: oklch(0.769 0.188 70.08);
+  --warning-foreground: oklch(0.32 0.09 65);
+
+  --info: oklch(0.585 0.154 247.456);
+  --info-foreground: oklch(0.985 0 0);
+
+  /* -----------------------------------------------------------------------
+   * LINES & FOCUS
+   * --------------------------------------------------------------------- */
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: var(--brand-500);
+
+  /* -----------------------------------------------------------------------
+   * SHAPE & TYPE
+   * --------------------------------------------------------------------- */
+  --radius: 0.625rem;
+
+  --font-sans:
+    'Segoe UI', system-ui, -apple-system, 'Noto Sans Arabic', Arial,
+    sans-serif;
+  --font-arabic:
+    'Noto Sans Arabic', 'Segoe UI', system-ui, -apple-system, Arial, sans-serif;
+}
+
+/* --------------------------------------------------------------------------
+ * DARK MODE — the same token set re-mapped for high contrast surfaces.
+ * Readiness only; toggling is demoed in the design-system page.
+ * ------------------------------------------------------------------------ */
+.dark {
+  /* Brand maps to a lighter anchor so it reads on dark surfaces */
+  --brand: var(--brand-300);
+  --brand-hover: var(--brand-200);
+  --brand-active: var(--brand-100);
+  --brand-soft: oklch(0.294 0.072 293.6);
+  --brand-soft-fg: var(--brand-300);
+  --brand-fg: oklch(0.283 0.141 291.09);
+  --ring: var(--brand-400);
+
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+
+  --success-foreground: oklch(0.985 0 0);
+  --warning-foreground: oklch(0.985 0 0);
+  --info-foreground: oklch(0.985 0 0);
+
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+}

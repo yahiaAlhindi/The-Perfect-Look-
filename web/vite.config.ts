@@ -1,15 +1,20 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { fileURLToPath, URL } from 'node:url'
 
 // GitHub Pages project sub-path. MUST match the repository name:
 // https://yahiaAlhindi.github.io/The-Perfect-Look-/
 const base = '/The-Perfect-Look-/'
 
+const resolve = (path: string) => fileURLToPath(new URL(path, import.meta.url))
+
 export default defineConfig({
   base,
   plugins: [
     react(),
+    tailwindcss(),
     // PWA readiness config (full install/offline polish lands in T30).
     VitePWA({
       registerType: 'autoUpdate',
@@ -46,4 +51,9 @@ export default defineConfig({
   // Options for viewing the deploy target locally:
   //   npm run dev  -> http://localhost:5173/The-Perfect-Look-/
   //   npm run build && npm run preview
+  resolve: {
+    alias: {
+      '@': resolve('./src'),
+    },
+  },
 })

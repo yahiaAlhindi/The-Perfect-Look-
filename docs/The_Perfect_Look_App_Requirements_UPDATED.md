@@ -70,6 +70,10 @@ nutritionist review.
   nutritionist who may be assigned to work.
 - **Wellness plan:** nutrition calculations, goals, meal schedule, and
   related content. It is not a medical diagnosis.
+- **Large data:** a large number of records or data volume being
+  retrieved or processed (for example, migrating a multi-year Excel export
+  or generating a period report), rather than a large numeric value within
+  a single result.
 
 ## 3. Stakeholders and roles
 

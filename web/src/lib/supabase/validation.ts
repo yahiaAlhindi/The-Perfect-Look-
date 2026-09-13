@@ -126,3 +126,115 @@ export function normalizeIdentifier(identifier: string): string {
 export function passwordPolicyHint(): string {
   return 'Min 8 chars with uppercase, lowercase, number and special character'
 }
+
+/** Supported UI languages (SRS §18). */
+export const SUPPORTED_LANGUAGES = ['en', 'ar'] as const
+export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number]
+
+export interface ProfileUpdatePayload {
+  fullName: string
+  dob?: string | null
+  gender?: string | null
+  preferredLanguage?: string
+}
+
+export interface ProfileUpdateValidation {
+  valid: boolean
+  errors: Partial<Record<keyof ProfileUpdatePayload, string>>
+}
+
+/**
+ * Validates the editable profile fields for `PUT /profile` (T8).
+ * Mirrors the profiles table + SRS §7 — full name required (min 2),
+ * date of birth must be a valid, non-future date, gender is free-form
+ * short text, language must be EN or AR. Email/mobile are intentionally
+ * absent (restricted pending T35) and role is never editable by the user.
+ */
+export function validateProfileUpdate(
+  payload: ProfileUpdatePayload,
+): ProfileUpdateValidation {
+  const errors: ProfileUpdateValidation['errors'] = {}
+  const fullName = payload.fullName.trim()
+
+  if (!fullName || fullName.length < 2) {
+    errors.fullName = 'Full name is required (min 2 characters)'
+  }
+
+  if (payload.dob && !isValidDob(payload.dob)) {
+    errors.dob = 'Please enter a valid date of birth (cannot be in the future)'
+  }
+
+  if (payload.gender != null && payload.gender.trim() === '') {
+    errors.gender = 'Gender cannot be empty — remove it to clear the field'
+  }
+
+  if (payload.preferredLanguage != null) {
+    const language = payload.preferredLanguage.trim().toLowerCase()
+    if (
+      language !== '' &&
+      !(SUPPORTED_LANGUAGES as readonly string[]).includes(language)
+    ) {
+      errors.preferredLanguage = 'Preferred language must be EN or AR'
+    }
+  }
+
+  return { valid: Object.keys(errors).length === 0, errors }
+}
+
+/** True for a `YYYY-MM-DD` date that is real and not in the future. */
+export function isValidDob(value: string): boolean {
+  const iso = value.trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    return false
+  }
+  const date = new Date(iso + 'T00:00:00Z')
+  const [y, m, d] = iso.split('-').map(Number)
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getUTCFullYear() !== y ||
+    date.getUTCMonth() !== m - 1 ||
+    date.getUTCDate() !== d ||
+    date > new Date()
+  ) {
+    return false
+  }
+  return true
+}
+
+export interface PasswordChangePayload {
+  currentPassword: string
+  newPassword: string
+  confirmPassword: string
+}
+
+export interface PasswordChangeValidation {
+  valid: boolean
+  errors: Partial<Record<keyof PasswordChangePayload, string>>
+}
+
+/**
+ * Validates a change-password request (T8 / SRS §7). The current
+ * password is verified against the session on the server; here we only
+ * enforce the policy + confirmation (and reject reuse of the same value).
+ */
+export function validatePasswordChange(
+  payload: PasswordChangePayload,
+): PasswordChangeValidation {
+  const errors: PasswordChangeValidation['errors'] = {}
+
+  if (!payload.currentPassword) {
+    errors.currentPassword = 'Enter your current password'
+  }
+  if (!isValidPassword(payload.newPassword)) {
+    errors.newPassword =
+      'Password must be at least 8 characters and include uppercase, lowercase, number and special character'
+  }
+  if (payload.newPassword === payload.currentPassword) {
+    errors.newPassword = 'New password must be different from the current one'
+  }
+  if (payload.newPassword !== payload.confirmPassword) {
+    errors.confirmPassword = 'Passwords do not match'
+  }
+
+  return { valid: Object.keys(errors).length === 0, errors }
+}

@@ -102,7 +102,7 @@ scope. These approvals are tracked in T35 and T36.
 - **Owner:** Person 2
 - **Priority:** Must start first
 - **Dependencies:** none
-- **Status:** Not Started
+- **Status:** Done
 - **Description:**
   - Set up the React/Vite/TypeScript/Tailwind app shell and design tokens.
   - Build reusable buttons, inputs, selects, checkboxes, cards, badges,
@@ -197,7 +197,7 @@ scope. These approvals are tracked in T35 and T36.
 - **Owner:** Person 2
 - **Priority:** 2
 - **Dependencies:** T1, T5
-- **Status:** Not Started
+- **Status:** Done
 - **Description:** Build registration, login, forgot/reset password,
   logout, consent, language switch, validation, and return-to-booking
   behavior.
@@ -211,26 +211,35 @@ scope. These approvals are tracked in T35 and T36.
 - **Owner:** Person 2
 - **Priority:** 3
 - **Dependencies:** T6, T8
-- **Status:** Not Started
+- **Status:** Done
 - **Description:** View/edit allowed profile fields, client number,
   language, consent preferences, and password change. Keep sensitive
   nutrition data in its own protected flow.
 - **Acceptance criteria:** Changes persist, uniqueness errors are friendly,
   client number cannot be edited, and the customer cannot access another
   profile.
+- **Notes:** Implemented on `/profile` behind ProtectedRoute (guest ->
+  `/auth/login?redirect=/profile`, return-to-booking). Client number is
+  read-only with a placeholder until T37 exposes the assigned value.
+  Nutrition/health data is kept out of this page (separate protected flow).
 
 #### T8 - Profile and consent API
 
 - **Owner:** Person 1
 - **Priority:** 3
 - **Dependencies:** T3, T5
-- **Status:** Not Started
+- **Status:** Done
 - **Description:** Implement own-profile GET/PUT, allowed field rules,
   password change, consent history, data-request entry point, and
   server-side validation.
 - **Acceptance criteria:** RLS prevents cross-customer updates; consent
   records include version and timestamp; sensitive fields are not exposed
   to public queries.
+- **Notes:** Consent + data-request tables added in
+  `supabase/migrations/004_consents.sql` (append-only consents with version
+  + timestamp, own-row RLS); acceptance test in `supabase/tests/rls_consents.sql`.
+  Signup consent choices are persisted best-effort right after `signUp`
+  when a session exists, else captured on first login via the T7 page.
 
 ### Milestone C - Catalogue, branches, and availability
 
@@ -434,6 +443,10 @@ scope. These approvals are tracked in T35 and T36.
   results as authorized CSV/Excel reports.
 - **Acceptance criteria:** Filters are applied server-side, exports contain
   only permitted fields, and migration results are retrievable.
+- **Notes:** "Large data" here means many records / high data volume per
+  SRS §2 (e.g. a period's full appointment and payment history), not a
+  large numeric value; design buffered/paginated exports rather than
+  loading one huge result set in memory.
 
 #### T24 - Reports and export UI
 
@@ -462,7 +475,10 @@ scope. These approvals are tracked in T35 and T36.
   failed rows are separated; rerunning does not duplicate records; the
   source workbook is byte-identical.
 - **Notes:** Do not import payments/subscriptions unless the client
-  supplies reliable columns and approves the mapping.
+  supplies reliable columns and approves the mapping. "Large data" means a
+  large number of imported records / workbook volume per SRS §2 (e.g. a
+  multi-year customer-and-appointment export), not a large value in a cell;
+  process in batches and report progress per chunk.
 
 #### T26 - Migration admin UI
 

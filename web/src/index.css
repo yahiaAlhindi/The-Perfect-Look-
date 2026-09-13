@@ -1,27 +1,603 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import './styles/tokens.css';
+
+/* RTL: enable rtl:/ltr: utility variants driven by <html dir="..."> */
+@custom-variant rtl (&:where([dir='rtl'], [dir='rtl'] *));
+@custom-variant ltr (&:where([dir='ltr'], [dir='ltr'] *));
+
+/* Dark mode via .dark class on <html> */
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Map design tokens (tokens.css) onto Tailwind utilities.
+ * The `inline` keyword means utilities resolve the var() at usage time,
+ * so swapping a value in tokens.css re-themes the whole app.
+ */
+@theme inline {
+  /* Brand scale + aliases */
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+  --color-brand-950: var(--brand-950);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-active: var(--brand-active);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-soft-fg: var(--brand-soft-fg);
+
+  /* Surface */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  /* Actions */
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  /* Status */
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+
+  /* Lines, focus & shape */
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* Type */
+  --font-sans: var(--font-sans);
+  --font-arabic: var(--font-arabic);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    min-height: 100svh;
+    margin: 0;
+  }
+
+  button,
+  [role='button'] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled,
+  input:disabled {
+    cursor: not-allowed;
+  }
+
+  html[dir='rtl'] body {
+    font-family: var(--font-arabic);
+  }
+}
+
+/* ==========================================================================
+   T6/T7 leaf styles — plain-CSS auth & profile screens.
+   No colours/fonts are hard-coded here: every value below is derived from
+   the shared token layer (tokens.css) via the aliases in this :root block,
+   so a rebrand in T46 re-themes these screens automatically.
+   ======================================================================== */
+
 :root {
-  font-family: 'Segoe UI', system-ui, -apple-system, 'Noto Sans Arabic',
-    Arial, sans-serif;
-  color: #1a1a1a;
-  background-color: #ffffff;
-  -webkit-font-smoothing: antialiased;
+  /* Semantic aliases used by the auth/profile CSS, mapped onto tokens */
+  --color-primary-700: var(--brand-700);
+  --color-primary-50: var(--brand-50);
+  --color-error: var(--destructive);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --color-info: var(--info);
+  --color-text: var(--foreground);
+  --color-text-muted: var(--muted-foreground);
+  --color-surface: var(--card);
+  --color-surface-muted: var(--muted);
+  --radius-lg: var(--radius);
+  --space: 0.875rem;
+  --control-height: 2.875rem;
+
+  /* Soft status backgrounds derived from the token palette */
+  --color-error-bg: color-mix(in oklab, var(--destructive) 12%, var(--background));
+  --color-success-bg: color-mix(in oklab, var(--success) 14%, var(--background));
+  --color-info-bg: color-mix(in oklab, var(--info) 12%, var(--background));
+  --color-warning-bg: color-mix(in oklab, var(--warning) 14%, var(--background));
 }
 
-* {
-  box-sizing: border-box;
+a {
+  color: var(--color-primary-700);
 }
 
-body {
+button {
+  font-family: inherit;
+}
+
+/* ── Shared buttons ───────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: var(--control-height);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background-color: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background-color: var(--color-primary-700);
+  border-color: var(--color-primary-700);
+}
+
+.btn--secondary {
+  background-color: var(--color-surface);
+  color: var(--color-primary-700);
+  border-color: var(--color-border);
+}
+
+.btn--secondary:hover:not(:disabled) {
+  background-color: var(--color-surface-muted);
+}
+
+.btn--block {
+  width: 100%;
+}
+
+/* ── Auth / profile shell (full-height, centered card) ────────── */
+
+.auth-shell {
+  max-width: 30rem;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 1rem 1rem 2rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-shell__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.auth-shell__brand {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--color-text);
+}
+
+.auth-shell__card {
+  flex: 1;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem 1.25rem;
+}
+
+.auth-shell__card--centered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.auth-shell__footer {
+  margin-top: 1.25rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.auth-title {
+  margin: 0 0 0.375rem;
+  font-size: 1.45rem;
+  line-height: 1.2;
+}
+
+.auth-subtitle {
+  margin: 0 0 1rem;
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.auth-form__row {
+  margin-top: -0.5rem;
+}
+
+.auth-alt {
+  margin: 1.25rem 0 0;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.auth-link {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.auth-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  margin-top: 1.25rem;
+}
+
+/* ── Form inputs ──────────────────────────────────────────────── */
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.auth-field__label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.auth-input,
+.auth-input-group {
+  width: 100%;
+}
+
+.auth-input {
+  min-height: var(--control-height);
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 1rem;
+  background-color: #fff;
+  color: var(--color-text);
+}
+
+.auth-input:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
+}
+
+.auth-field.has-error .auth-input,
+.auth-field.has-error .auth-input-group {
+  border-color: var(--color-error);
+}
+
+.auth-field.has-error .auth-input:focus {
+  outline-color: var(--color-error);
+}
+
+.auth-field__error {
   margin: 0;
-  min-height: 100vh;
+  font-size: 0.82rem;
+  color: var(--color-error);
 }
 
-#root {
-  min-height: 100vh;
+.auth-field__hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
 }
+
+/* Password input + show/hide toggle */
+
+.auth-input-group {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background-color: #fff;
+}
+
+.auth-input-group .auth-input {
+  border: none;
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+}
+
+.auth-input-group .auth-input:focus {
+  outline: none;
+}
+
+.auth-input-group:focus-within {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
+}
+
+.auth-input-group__toggle {
+  border: none;
+  background: transparent;
+  color: var(--color-primary-700);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.auth-field.has-error .auth-input-group {
+  border-color: var(--color-error);
+}
+
+/* ── Consent ──────────────────────────────────────────────────── */
+
+.auth-consent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 0.875rem 0.875rem 0.875rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background-color: var(--color-surface-muted);
+}
+
+.auth-consent__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.auth-consent__item input[type='checkbox'] {
+  flex-shrink: 0;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-top: 0.15rem;
+  accent-color: var(--color-primary);
+}
+
+.auth-consent__item.has-error {
+  color: var(--color-error);
+}
+
+.auth-consent__tag {
+  display: inline-block;
+  margin-inline-start: 0.25rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background-color: var(--color-primary);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.auth-consent__tag--muted {
+  background-color: var(--color-border);
+  color: var(--color-text-muted);
+}
+
+/* ── Client number (post-registration / profile, T37-aware) ───── */
+
+.client-number {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius);
+  background-color: var(--color-surface-muted);
+  text-align: center;
+}
+
+.client-number__label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.client-number__value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.client-number__note {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
+/* ── Alerts / banners ──────────────────────────────────────────── */
+
+.alert-banner {
+  padding: 0.75rem 0.875rem;
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  line-height: 1.45;
+  margin-bottom: 1rem;
+}
+
+.alert-banner--success {
+  background-color: var(--color-success-bg);
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
+}
+
+.alert-banner--error {
+  background-color: var(--color-error-bg);
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
+}
+
+.alert-banner--info {
+  background-color: var(--color-info-bg);
+  color: var(--color-info);
+  border: 1px solid var(--color-info);
+}
+
+/* ── Language switch ───────────────────────────────────────────── */
+
+.lang-switch {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.lang-switch__option {
+  border: none;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.lang-switch__option.is-active {
+  background-color: var(--color-primary);
+  color: #fff;
+}
+
+/* ── Spinner ───────────────────────────────────────────────────── */
+
+.spinner {
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Home placeholder ─────────────────────────────────────────── */
 
 .app-shell {
   max-width: 40rem;
   margin: 0 auto;
   padding: 2rem 1rem;
   text-align: center;
+}
+
+.home-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  align-items: center;
+  margin-top: 1.5rem;
+}
+
+.home-nav .btn {
+  width: 100%;
+  max-width: 18rem;
+}
+
+/* ── Mobile-tuned sizes (<480px) ───────────────────────────────── */
+
+@media (max-width: 29.9rem) {
+  .auth-shell {
+    padding: 0.625rem 0.625rem 1.5rem;
+  }
+
+  .auth-shell__card {
+    padding: 1.25rem 1rem;
+  }
+
+  .auth-input {
+    font-size: 16px; /* prevent iOS zoom-on-focus */
+  }
+
+  .auth-consent__tag {
+    display: block;
+    margin: 0.15rem 0 0;
+    width: fit-content;
+  }
+}
+
+@media (min-width: 30rem) {
+  .auth-shell {
+    justify-content: center;
+  }
+}
+
+/* ── RTL (Arabic) ──────────────────────────────────────────────── */
+
+[dir='rtl'] .lang-switch__option {
+  font-family: 'Noto Sans Arabic', 'Segoe UI', system-ui, sans-serif;
+}
+
+[dir='rtl'] .auth-consent__item {
+  text-align: right;
+}
+
+[dir='rtl'] .auth-input-group__toggle {
+  letter-spacing: 0;
 }
