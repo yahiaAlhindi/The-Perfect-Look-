@@ -358,7 +358,15 @@ scope. These approvals are tracked in T35 and T36.
 - **Owner:** Person 1
 - **Priority:** 5
 - **Dependencies:** T5, T9, T12, T37
-- **Status:** Not Started
+- **Status:** Done
+- **Implemented in:** `supabase/migrations/006_availability_engine.sql` (T12)
+  `public.reserve_slot()` — the transactional booking boundary (server-side
+  re-check of branch, price, service, provider, slot, grid, notice/booking
+  window and customer identity in one atomic statement; snapshots client
+  number, branch, price and buffer; auto-generates `appointment_ref`) — plus
+  `supabase/migrations/008_appointment_booking_api.sql`:
+  `appointments.payment_status` so the confirmation reports payment status.
+  Acceptance test: `supabase/tests/appointment_booking_api.sql` (7 tests).
 - **Description:** Transactional appointment creation with server-side
   re-check of branch, price, service, provider, slot, notice period,
   booking rules, and customer identity. Generate a unique Appointment ID
