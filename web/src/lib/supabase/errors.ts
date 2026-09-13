@@ -138,6 +138,29 @@ function mapPostgresError(message: string, original: Error): MappedError {
     }
   }
 
+  // T8 trigger messages (004_consents_data_requests.sql) — allowed
+  // field rules and consent immutability surface as friendly errors.
+  if (/email cannot be changed/i.test(message)) {
+    return {
+      code: 'FORBIDDEN',
+      message: 'Email cannot be changed here — use the account settings flow',
+      original,
+    }
+  }
+  if (/cannot change your own role/i.test(message)) {
+    return { code: 'FORBIDDEN', message: 'You cannot change your role', original }
+  }
+  if (/profile (id|creation time) is immutable/i.test(message)) {
+    return { code: 'FORBIDDEN', message: 'That field cannot be edited', original }
+  }
+  if (/consent records are immutable/i.test(message)) {
+    return {
+      code: 'CONSENT_IMMUTABLE',
+      message: 'Consent history is immutable — record a new grant or withdrawal instead',
+      original,
+    }
+  }
+
   // Trigger-generated friendly messages already read well; surface them
   if (/mobile number is required/i.test(message)) {
     return { code: 'MOBILE_REQUIRED', message: 'Mobile number is required', original }

@@ -224,13 +224,17 @@ scope. These approvals are tracked in T35 and T36.
 - **Owner:** Person 1
 - **Priority:** 3
 - **Dependencies:** T3, T5
-- **Status:** Not Started
+- **Status:** Done
 - **Description:** Implement own-profile GET/PUT, allowed field rules,
   password change, consent history, data-request entry point, and
   server-side validation.
 - **Acceptance criteria:** RLS prevents cross-customer updates; consent
   records include version and timestamp; sensitive fields are not exposed
   to public queries.
+- **Notes:** Database support in `supabase/migrations/004_consents_data_requests.sql`
+  (versioned append-only `consents`, `data_requests` queue, allowed-field-rules
+  trigger); client API in `web/src/lib/supabase/profiles.ts`; acceptance test in
+  `supabase/tests/profile_consent_api.sql`. UI work tracked by T7.
 
 ### Milestone C - Catalogue, branches, and availability
 
