@@ -280,17 +280,53 @@ scope. These approvals are tracked in T35 and T36.
 - **Owner:** Person 1
 - **Priority:** 4
 - **Dependencies:** T3, T4, T9, T37
-- **Status:** Not Started
+- **Status:** Done
 - **Description:** Generate slots from branch hours, service duration and
   buffers, provider schedules, leave, holidays, closures, blocks,
   capacity, and existing appointments. Include branch and timezone in
-  every query.
+  every query. Server-side `reserve_slot()` re-validates the whole
+  availability stack and serialises concurrent requests per provider
+  + branch so exactly one overlapping booking succeeds.
 - **Acceptance criteria:**
   - Slots respect branch/provider rules and Asia/Dubai time.
+    - Verified by `supabase/tests/availability_engine.sql` TEST 1
+      (19 slots in branch hours, times within 10:00–20:00 Asia/Dubai,
+      timezone + branch carried in every row), TEST 3 (leave removes
+      covered slots) and TEST 4 (existing appointment + buffer both
+      remove the right starts).
   - A staff member working at two branches cannot be double-booked.
+    - Verified by TEST 5: Dubai 10:00 booked -> Abu Dhabi 10:00
+      absent from slot list; `reserve_slot()` at Abu Dhabi 10:00
+      rejected; raw INSERT overlapping across branches rejected by the
+      DB `appt_no_overlapping_staff` EXCLUDE constraint; same-start
+      insert at a second branch rejected by the T3 unique index.
   - Parallel requests for one slot result in exactly one successful
     booking.
-- **Notes:** This remains a core concurrency boundary for all channels.
+    - Verified by `supabase/tests/availability_engine_parallel_worker.sql`
+      spawned by `.ps1` / `.sh` drivers: N concurrent `reserve_slot()`
+      calls for one slot -> exactly one 'success' in
+      `availability_parallel_results`; DB EXCLUDE constraint and
+      advisory lock provide the boundary across every channel.
+  - Branch capacity (`max_concurrent_appointments`) blocks a second
+    concurrent slot when the limit is reached.
+    - Verified by TEST 6 (capacity 1 -> second provider's 10:00 gone,
+      11:00 open; `reserve_slot()` rejected with the stable message).
+  - Reservation snapshots (price, buffer, client number, service name)
+    are captured at booking time and immune to later catalogue edits.
+    - Verified by TEST 7 (`TPL-` appointment_ref, client_number,
+      service_name_snapshot, price_snapshot, currency_snapshot,
+      buffer_minutes, status Pending).
+  - Authorization: signed-in patient may book only for themselves;
+    anon JWT is rejected.
+    - Verified by TEST 8.
+  - Layout and branch-scope rejections: closed day, outside hours,
+    off-grid start, provider not at branch, missing provider.
+    - Verified by TEST 9 (Sunday, 21:00, 10:15, NULL provider,
+      provider-B-at-abu-dhabi, buffer-service-at-abu-dhabi).
+- **Notes:** Migration 006 extends branches/appointments and adds
+  `get_availability()` + `reserve_slot()`. Typecheck + build pass in
+  `web/`. Run `supabase db reset` then the test suite against the
+  local or online DB to record evidence (see supabase/README.md).
 
 #### T13 - Availability picker UI
 

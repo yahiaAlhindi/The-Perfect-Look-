@@ -154,6 +154,8 @@ export interface Appointment {
   currency_snapshot: string
   package_id: string | null
   source_channel: string
+  /** T12: buffer snapshot at booking time — conflicts computed against this. */
+  buffer_minutes: number
   last_modified_by: string | null
   last_modified_at: string
   created_at: string
@@ -201,6 +203,8 @@ export interface Branch {
   timezone: string
   map_url: string | null
   active: boolean
+  /** T12: max concurrent active appointments (NULL = unlimited). */
+  max_concurrent_appointments: number | null
   sort_order: number
   created_at: string
   updated_at: string
@@ -344,6 +348,34 @@ export interface ClientSearchResult {
   mobile_number: string
 }
 
+// ── T12: availability engine ─────────────────────────────────
+
+/**
+ * One generated slot row from `public.get_availability(...)`.
+ * `slot_start`/`slot_end` are absolute instants computed from the
+ * branch timezone (Asia/Dubai mandated by the SRS); every row
+ * carries the branch and the timezone used.
+ */
+export interface AvailabilitySlot {
+  branch_id: string
+  branch_name: string
+  timezone: string
+  slot_date: string
+  slot_start: string
+  slot_end: string
+  provider_id: string
+  provider_name: string
+  service_id: string
+  service_name: string
+  duration_minutes: number
+  buffer_minutes: number
+  price: number
+  currency: string
+}
+
+/** Row returned by `public.reserve_slot(...)` — a full appointment. */
+export type ReservedAppointment = Appointment
+
 /**
  * Database type bag for createClient<Database>().
  * Only the tables/functions the MVP uses are modelised here; omitted
@@ -396,6 +428,28 @@ export interface Database {
       search_clients: {
         Args: { p_query: string }
         Returns: Array<ClientSearchResult>
+      }
+      get_availability: {
+        Args: {
+          p_branch_id: string
+          p_service_id: string
+          p_from: string
+          p_to: string
+          p_staff_id?: string | null
+        }
+        Returns: Array<AvailabilitySlot>
+      }
+      reserve_slot: {
+        Args: {
+          p_branch_id: string
+          p_service_id: string
+          p_patient_id: string
+          p_start: string
+          p_staff_id?: string | null
+          p_notes?: string | null
+          p_source_channel?: string
+        }
+        Returns: ReservedAppointment
       }
     }
     Enums: {
