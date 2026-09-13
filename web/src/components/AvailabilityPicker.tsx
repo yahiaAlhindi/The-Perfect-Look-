@@ -23,11 +23,11 @@ import type {
   ProviderSummary,
 } from '../lib/supabase/types'
 import {
+  getAvailability,
   listBranches,
   listBranchHours,
   listBranchProviders,
   listClosedDates,
-  queryAvailability,
 } from '../lib/supabase/availability'
 import { makeTranslator, type Lang } from '../i18n'
 import './AvailabilityPicker.css'
@@ -42,6 +42,17 @@ export interface BookingSelection {
   bookingDate: string
   slotStart: string
   slotEnd: string
+}
+
+/**
+ * A single renderable time group: one slot_start with its free
+ * provider(s) — the engine returns one row per (slot, provider);
+ * the picker collapses rows sharing a start into one button.
+ */
+interface SlotGroup {
+  slotStart: string
+  slotEnd: string
+  providers: { id: string; name: string }[]
 }
 
 interface AvailabilityPickerProps {
@@ -171,15 +182,22 @@ export default function AvailabilityPicker({
     return days
   }, [weekStart])
 
-  const slotsByDate = useMemo(() => {
-    const grouped: Record<string, AvailabilitySlot[]> = {}
+  const slotGroups = useMemo(() => {
+    const byDate: Record<string, SlotGroup[]> = {}
     for (const slot of slots) {
-      ;(grouped[slot.booking_date] ??= []).push(slot)
+      const key = slot.slot_date
+      const groups = (byDate[key] ??= [])
+      let group = groups.find((g) => g.slotStart === slot.slot_start)
+      if (!group) {
+        group = { slotStart: slot.slot_start, slotEnd: slot.slot_end, providers: [] }
+        groups.push(group)
+      }
+      group.providers.push({ id: slot.provider_id, name: slot.provider_name })
     }
-    for (const key of Object.keys(grouped)) {
-      grouped[key].sort((a, b) => a.slot_start.localeCompare(b.slot_start))
+    for (const key of Object.keys(byDate)) {
+      byDate[key].sort((a, b) => a.slotStart.localeCompare(b.slotStart))
     }
-    return grouped
+    return byDate
   }, [slots])
 
   const selectedBranch = useMemo(
@@ -247,12 +265,12 @@ export default function AvailabilityPicker({
 
     void (async () => {
       const [avail, closed] = await Promise.all([
-        queryAvailability({
+        getAvailability({
           branchId: selectedBranchId,
           serviceId,
-          providerId: providerFilter,
-          startDate: weekDates[0],
-          endDate: weekDates[6],
+          from: weekDates[0],
+          to: weekDates[6],
+          staffId: providerFilter,
         }),
         listClosedDates(selectedBranchId, weekDates[0], weekDates[6]),
       ])
@@ -279,11 +297,11 @@ export default function AvailabilityPicker({
       if (closures.has(dateStr) || holidaySet.has(dateStr)) return 'closed'
       const dow = parseUtc(dateStr).getUTCDay() // 0 = Sun … 6 = Sat
       if (!openDays.has(dow)) return 'closed'
-      const count = slotsByDate[dateStr]?.length ?? 0
+      const count = slotGroups[dateStr]?.length ?? 0
       if (count === 0) return 'unavailable'
       return count <= 2 ? 'limited' : 'available'
     },
-    [today, closures, holidaySet, openDays, slotsByDate],
+    [today, closures, holidaySet, openDays, slotGroups],
   )
 
   // ── interactions ─────────────────────────────────────────────
@@ -305,7 +323,7 @@ export default function AvailabilityPicker({
     setWeekStart(currentWeek)
   }
 
-  const handleSlot = (slot: AvailabilitySlot) => {
+  const handleSlot = (group: SlotGroup) => {
     if (!selectedBranch) return
     const provider =
       providerFilter !== null
@@ -314,16 +332,16 @@ export default function AvailabilityPicker({
     onSelect?.({
       branch: selectedBranch,
       provider,
-      providerNames: slot.staff_names,
-      bookingDate: slot.booking_date,
-      slotStart: slot.slot_start,
-      slotEnd: slot.slot_end,
+      providerNames: group.providers.map((p) => p.name),
+      bookingDate: selectedDate ?? group.slotStart.slice(0, 10),
+      slotStart: group.slotStart,
+      slotEnd: group.slotEnd,
     })
   }
 
   // ── render ───────────────────────────────────────────────────
 
-  const selectedSlots = selectedDate ? (slotsByDate[selectedDate] ?? []) : []
+  const selectedGroups = selectedDate ? (slotGroups[selectedDate] ?? []) : []
   const selectedState = selectedDate ? dayState(selectedDate) : 'closed'
 
   return (
@@ -512,29 +530,31 @@ export default function AvailabilityPicker({
                         <p className="ap-hint">{t('state.closed')} — {t('slot.empty')}</p>
                       )}
 
-                      {selectedState !== 'closed' && selectedSlots.length === 0 && (
+                      {selectedState !== 'closed' && selectedGroups.length === 0 && (
                         <p className="ap-hint">{t('slot.empty')}</p>
                       )}
 
-                      {selectedSlots.length > 0 && (
+                      {selectedGroups.length > 0 && (
                         <>
                           <p className="ap-slots-title">
                             {t('slot.choose')}
                             {serviceDuration ? ` · ${serviceDuration} min` : ''}
                           </p>
                           <div className="ap-slot-grid">
-                            {selectedSlots.map((slot) => (
+                            {selectedGroups.map((group) => (
                               <button
-                                key={slot.slot_start}
+                                key={group.slotStart}
                                 type="button"
                                 className="ap-slot"
-                                onClick={() => handleSlot(slot)}
+                                onClick={() => handleSlot(group)}
                               >
                                 <span className="ap-slot-time">
-                                  {slotTimeLabel(slot.slot_start, language)}
+                                  {slotTimeLabel(group.slotStart, language)}
                                 </span>
                                 <span className="ap-slot-providers">
-                                  {slot.staff_names.join(language === 'ar' ? '، ' : ', ')}
+                                  {group.providers
+                                    .map((p) => p.name)
+                                    .join(language === 'ar' ? '، ' : ', ')}
                                 </span>
                               </button>
                             ))}

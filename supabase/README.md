@@ -9,14 +9,19 @@ Supabase schema source of truth for The Perfect Look (MVP, task T3).
 | `migrations/003_seed_data.sql`   | T4 idempotent seed — services (SRS §8), demo staff + availability, `app_settings`, holidays |
 | `migrations/004_branches_client_number_pricing.sql` | T37 schema extension — branches, branch hours/closures, staff-branch assignments, branch_access (branch-scoped RLS), service-branch availability/pricing, packages/add-ons, client number, appointment branch + price snapshots, migration mappings |
 | `migrations/005_seed_demo_branches.sql` | T37 idempotent seed + backfill — demo Dubai/Abu Dhabi branches, hours, staff assignments, branch access, service availability, client numbers, appointment snapshots |
-| `migrations/006_availability_engine.sql` | T12 branch-aware availability engine — `get_branch_providers()`, `is_staff_free()`, `get_availability()` (branch hours/closures, holidays, duration/buffers, provider schedules, blocks, appointments at any branch, Asia/Dubai time, booking window/notice) |
+| `migrations/006_availability_engine.sql` | T12 branch-aware availability engine — branch capacity, per-appointment buffer snapshot, DB EXCLUDE overlap boundary, `get_availability()`, atomic `reserve_slot()` |
+| `migrations/007_branch_providers.sql` | T13 provider list for the availability picker — `get_branch_providers()` (active staff assigned to a branch, primary first) |
 | `schema.sql`                     | Consolidated snapshot of the final schema (kept in sync)      |
 | `seed.sql`                       | Idempotent admin-account seed (call `seed_admin()` with your credentials) |
 | `tests/rls_appointments.sql`     | RLS acceptance test (patient isolation, RBAC, SRS §10 enum)   |
 | `tests/seed_data.sql`            | T4 seed acceptance test (services, settings, staff, holidays) |
 | `tests/services_api.sql`         | T9 services API test (active-only reads, admin-only writes, instant patient reflection) |
 | `tests/multi_branch_pricing_schema.sql` | T37 acceptance test (branches seed idempotently, client-number uniqueness/immutability/search, branch-scoped RLS, price snapshots, packages, migration mappings) |
-| `tests/availability_engine.sql`  | T12 acceptance test (slot grid in Asia/Dubai, holiday/closure days, provider filter, booking + buffer blocks, cross-branch single-book, unique-index concurrency, past dates, advance notice) |
+| `tests/availability_engine.sql`  | T12 acceptance test (branch hours + Asia/Dubai slots, holidays/closures, leave blocks, buffer/existing-appointment conflicts, cross-branch no-double-book, capacity, snapshots, authorization, layout rejections) |
+| `tests/availability_engine_parallel_setup.sql` | T12 parallel-slot proof fixtures + results table (`cleanup` var toggles teardown) |
+| `tests/availability_engine_parallel_worker.sql` | T12 parallel-slot proof worker (one concurrent `reserve_slot()` attempt, one result row) |
+| `tests/availability_engine_parallel.ps1` | T12 parallel-slot proof driver (Windows) — N concurrent workers, asserts exactly one success |
+| `tests/availability_engine_parallel.sh` | T12 parallel-slot proof driver (POSIX) — same proof as the `.ps1` |
 
 ## What the schema contains
 
@@ -69,6 +74,36 @@ It asserts: patients can only read their own appointments, can't
 insert/update another patient's appointment, staff/admin see all, and the
 `appointment_status` enum matches SRS §10. It can also be pasted into the
 online SQL editor.
+
+## Running the availability-engine acceptance test (T12)
+
+Requires migrations 001–006 applied (`supabase db reset`), then:
+
+```bash
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/availability_engine.sql
+```
+
+It asserts: slots respect branch hours/provider schedules/buffers in
+Asia/Dubai (with branch + timezone in every row), holidays and branch
+closures remove the day, leave blocks remove covered slots, existing
+appointments (incl. buffers) remove overlapping starts, a multi-branch
+provider cannot be double-booked (slot list, `reserve_slot()`, DB EXCLUDE
+constraint + T3 unique index), branch capacity blocks the second
+concurrent slot, booking-time snapshots are captured, authorization
+(own-record only, no anon), and layout/branch-scope rejections.
+
+### Parallel-requests proof (exactly one success)
+
+```bash
+export SUPABASE_DB_URL="postgresql://postgres:postgres@localhost:54322/postgres"
+./supabase/tests/availability_engine_parallel.sh        # or .ps1 on Windows
+```
+
+Spawns N concurrent `psql` workers that all try to `reserve_slot()` the
+exact same slot, then asserts `availability_parallel_results` has exactly
+one `success` among N attempts (advisory-locked re-check + DB overlap
+boundary). Fixtures and the results table are created and torn down by
+`availability_engine_parallel_setup.sql` automatically.
 
 > Only the Supabase URL + **anon** key ever reach the browser. The
 > service-role key is used exclusively by `tools/` (T25) and CI.

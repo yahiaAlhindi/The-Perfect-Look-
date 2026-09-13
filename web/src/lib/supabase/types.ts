@@ -154,6 +154,8 @@ export interface Appointment {
   currency_snapshot: string
   package_id: string | null
   source_channel: string
+  /** T12: buffer snapshot at booking time — conflicts computed against this. */
+  buffer_minutes: number
   last_modified_by: string | null
   last_modified_at: string
   created_at: string
@@ -201,6 +203,8 @@ export interface Branch {
   timezone: string
   map_url: string | null
   active: boolean
+  /** T12: max concurrent active appointments (NULL = unlimited). */
+  max_concurrent_appointments: number | null
   sort_order: number
   created_at: string
   updated_at: string
@@ -347,8 +351,34 @@ export interface ClientSearchResult {
 // ── T12: availability engine ─────────────────────────────────
 
 /**
+ * One generated slot row from `public.get_availability(...)`.
+ * `slot_start`/`slot_end` are absolute instants computed from the
+ * branch timezone (Asia/Dubai mandated by the SRS); every row
+ * carries the branch and the timezone used.
+ */
+export interface AvailabilitySlot {
+  branch_id: string
+  branch_name: string
+  timezone: string
+  slot_date: string
+  slot_start: string
+  slot_end: string
+  provider_id: string
+  provider_name: string
+  service_id: string
+  service_name: string
+  duration_minutes: number
+  buffer_minutes: number
+  price: number
+  currency: string
+}
+
+/** Row returned by `public.reserve_slot(...)` — a full appointment. */
+export type ReservedAppointment = Appointment
+
+/**
  * Provider (staff) summary returned by `get_branch_providers`
- * (T12 migration 006) — drives the optional provider step of the
+ * (T13 migration 007) — drives the optional provider step of the
  * availability picker.
  */
 export interface ProviderSummary {
@@ -358,22 +388,6 @@ export interface ProviderSummary {
   specializations: string[] | null
   active: boolean
   primary_branch: boolean
-}
-
-/**
- * A bookable slot returned by `get_availability` (T12 migration 006).
- * `booking_date` is the branch-local date (Asia/Dubai for the demo
- * branches); `staff_ids`/`staff_names` are the providers who are
- * free in that slot (empty never happens — slots without a provider
- * are omitted entirely).
- */
-export interface AvailabilitySlot {
-  booking_date: string
-  /** ISO 8601 instant — convert with the branch timezone to display. */
-  slot_start: string
-  slot_end: string
-  staff_ids: string[]
-  staff_names: string[]
 }
 
 /**
@@ -429,19 +443,31 @@ export interface Database {
         Args: { p_query: string }
         Returns: Array<ClientSearchResult>
       }
-      get_branch_providers: {
-        Args: { p_branch_id: string }
-        Returns: Array<ProviderSummary>
-      }
       get_availability: {
         Args: {
           p_branch_id: string
           p_service_id: string
-          p_start_date: string
-          p_end_date: string
-          p_staff_ids?: string[] | null
+          p_from: string
+          p_to: string
+          p_staff_id?: string | null
         }
         Returns: Array<AvailabilitySlot>
+      }
+      get_branch_providers: {
+        Args: { p_branch_id: string }
+        Returns: Array<ProviderSummary>
+      }
+      reserve_slot: {
+        Args: {
+          p_branch_id: string
+          p_service_id: string
+          p_patient_id: string
+          p_start: string
+          p_staff_id?: string | null
+          p_notes?: string | null
+          p_source_channel?: string
+        }
+        Returns: ReservedAppointment
       }
     }
     Enums: {

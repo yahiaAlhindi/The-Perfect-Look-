@@ -1,39 +1,38 @@
 -- ============================================================
--- The Perfect Look — Availability engine acceptance test (T12)
+-- The Perfect Look — T12 acceptance test
+-- Branch-aware availability engine
 -- ============================================================
--- Verifies the T12 server-side guarantees supplied by migration
--- 006_availability_engine.sql:
---   TEST 1  get_branch_providers lists the branch's active staff.
---   TEST 2  Slots are generated on branch working days, in branch
---           time (Asia/Dubai), on the slot grid, sized by the
---           service duration, and stop before closing time.
---   TEST 3  Clinic-wide holiday closes the whole day.
---   TEST 4  Branch closure closes the whole day.
---   TEST 5  Provider filter narrows slots to that provider; a
---           provider without a weekly schedule yields no slots.
---   TEST 6  An existing appointment removes its slot from that
---           provider (buffer semantics also covered in TEST 7).
---   TEST 7  Service buffer protects the following slot.
---   TEST 8  Cross-branch block: a provider assigned to two branches
---           cannot be double-booked — a Dubai booking removes the
---           same slot at Abu Dhabi.
---   TEST 9  DB unique index still guarantees exactly one successful
---           booking per (staff, start) across all branches.
---   TEST 10 Past dates never produce slots.
---   TEST 11 Advance-notice booking rules are respected.
+-- Verifies the T12 server-side guarantees (migration 006):
+--   1. Slots respect branch hours, provider schedules, service
+--      duration/buffers, holidays, closures, blocked periods,
+--      capacity, and existing appointments — all in Asia/Dubai
+--      (branch timezone is carried through every row/query).
+--   2. A staff member working at two branches cannot be
+--      double-booked — slot generation never offers the second
+--      branch slot, reserve_slot() rejects it, and the DB
+--      EXCLUDE constraint rejects overlapping raw inserts.
+--   3. The concurrency boundary: overlapping bookings (same start
+--      via the T3 unique index, or a different start that overlaps
+--      via the T12 EXCLUDE constraint) are rejected at the
+--      database for every channel.
+--      Parallel-requests proof: run
+--        supabase/tests/availability_engine_parallel.ps1 (or .sh)
+--      after this file — N concurrent reserve_slot() calls for one
+--      slot → exactly one success.
 --
--- Requires migrations 001-006 applied and demo branches seeded
--- (005). Run:
+-- Requires migrations 001–006 applied. Run against the local db:
 --   supabase start
 --   supabase db reset
 --   psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/availability_engine.sql
--- Or paste into the online Supabase SQL editor (runs as the table
--- owner, so RLS is bypassed for fixtures). Every assertion prints
--- PASS or raises.
+--
+-- Or paste into the online Supabase SQL editor (runs as table
+-- owner, so RLS bypassed for fixtures). Every assertion prints
+-- PASS or raises an error.
 -- ============================================================
 
 \set ON_ERROR_STOP on
 
+-- PASS/FAIL assertion helper
 CREATE OR REPLACE FUNCTION public.expect(cond boolean, label text)
 RETURNS void
 LANGUAGE plpgsql
@@ -46,6 +45,7 @@ BEGIN
 END;
 $$;
 
+-- Read a UUID stored in a session GUC
 CREATE OR REPLACE FUNCTION public.get_setting_uuid(name text)
 RETURNS uuid
 LANGUAGE sql
@@ -54,6 +54,7 @@ AS $$
     SELECT current_setting(name)::uuid;
 $$;
 
+-- Read a DATE stored in a session GUC
 CREATE OR REPLACE FUNCTION public.get_setting_date(name text)
 RETURNS date
 LANGUAGE sql
@@ -62,549 +63,680 @@ AS $$
     SELECT current_setting(name)::date;
 $$;
 
+-- Act as `authenticated` with the given profile id in the JWT
+CREATE OR REPLACE FUNCTION public.act_as(p_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    SET ROLE authenticated;
+    PERFORM set_config(
+        'request.jwt.claims',
+        json_build_object('sub', p_id::text, 'role', 'authenticated')::text,
+        false
+    );
+END;
+$$;
+
+-- ─────────────────────────────────────────────────────────────
+-- TEST DAY: next Mon–Sat (branch open) that is not a holiday or
+-- dubai closure, at least a week out.
+-- ─────────────────────────────────────────────────────────────
+
+DO $$
+DECLARE
+    v_day date;
+BEGIN
+    v_day := ((now() AT TIME ZONE 'Asia/Dubai')::date) + 7;
+    WHILE EXTRACT(DOW FROM v_day)::int = 0
+       OR EXISTS (SELECT 1 FROM public.holidays h WHERE h.date = v_day)
+       OR EXISTS (SELECT 1 FROM public.branch_closures c
+                   JOIN public.branches b ON b.id = c.branch_id
+                  WHERE b.slug = 'dubai' AND c.date = v_day) LOOP
+        v_day := v_day + 1;
+    END LOOP;
+    PERFORM set_config('test.day', v_day::text, false);
+END;
+$$;
+
 -- ─────────────────────────────────────────────────────────────
 -- FIXTURES (as table owner — RLS bypassed)
 -- ─────────────────────────────────────────────────────────────
 
--- A guaranteed working day in the next 1–6 days (Mon–Sat, so the
--- branch is open and providers have a schedule).
-PERFORM set_config(
-    'test.day',
-    (SELECT to_char(min(d), 'YYYY-MM-DD')
-       FROM generate_series(now()::date + 1, now()::date + 6, '1 day') AS d
-      WHERE EXTRACT(DOW FROM d) BETWEEN 1 AND 6),
-    false
-);
+DO $$
+BEGIN
+    PERFORM set_config('test.dxb', (SELECT id::text FROM public.branches WHERE slug = 'dubai'), false);
+    PERFORM set_config('test.auh', (SELECT id::text FROM public.branches WHERE slug = 'abu-dhabi'), false);
 
--- A working day more than a week away (for the advance-notice test).
-PERFORM set_config(
-    'test.day_far',
-    (SELECT to_char(min(d), 'YYYY-MM-DD')
-       FROM generate_series(now()::date + 8, now()::date + 20, '1 day') AS d
-      WHERE EXTRACT(DOW FROM d) BETWEEN 1 AND 6),
-    false
-);
+    -- Auth users + profiles for the test roles
+    INSERT INTO auth.users (
+        instance_id, id, aud, role, email, encrypted_password,
+        email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
+        created_at, updated_at
+    )
+    SELECT '00000000-0000-0000-0000-000000000000', gen_random_uuid(),
+           'authenticated', 'authenticated', email,
+           crypt('Password123!', gen_salt('bf')), now(),
+           '{"provider":"email","providers":["email"]}',
+           jsonb_build_object('role', r, 'full_name', fn, 'mobile_number', mn),
+           now(), now()
+    FROM (VALUES
+        ('av.patient@test.local',  'patient', 'AV Patient',   '+971500000301'),
+        ('av.staff@test.local',    'staff',   'AV Staff',     '+971500000302'),
+        ('av.admin@test.local',    'admin',   'AV Admin',     '+971500000303'),
+        ('av.provider@test.local', 'staff',   'AV Provider',  '+971500000304'),
+        ('av.prov2@test.local',    'staff',   'AV Provider2', '+971500000305')
+    ) AS v(email, r, fn, mn);
 
-PERFORM set_config('test.branch', (SELECT id::text FROM public.branches WHERE slug = 'dubai'), false);
-PERFORM set_config('test.branch_auh', (SELECT id::text FROM public.branches WHERE slug = 'abu-dhabi'), false);
+    PERFORM set_config('test.p',   (SELECT id::text FROM public.profiles WHERE email = 'av.patient@test.local'), false);
+    PERFORM set_config('test.a',   (SELECT id::text FROM public.profiles WHERE email = 'av.admin@test.local'), false);
 
--- Fixture service: 60 minutes, no buffer.
-INSERT INTO public.services (name, description, duration_minutes, price, currency, active, sort_order)
-SELECT 'Availability Test Service', 'fixture', 60, 100.00, 'AED', true, 800
-WHERE NOT EXISTS (SELECT 1 FROM public.services WHERE name = 'Availability Test Service');
+    -- Fixture providers need real staff rows.
+    INSERT INTO public.staff (profile_id, title, specializations, active)
+    SELECT id, 'Technician', ARRAY['AV fixture'], true
+      FROM public.profiles
+     WHERE email IN ('av.provider@test.local', 'av.prov2@test.local')
+    ON CONFLICT (profile_id) DO NOTHING;
 
--- Buffer fixture: 60 minutes with a 15-minute after-booking buffer.
-INSERT INTO public.services (name, description, duration_minutes, price, currency, active, sort_order, buffer_minutes)
-SELECT 'Availability Buffer Service', 'fixture', 60, 100.00, 'AED', true, 801, 15
-WHERE NOT EXISTS (SELECT 1 FROM public.services WHERE name = 'Availability Buffer Service');
+    PERFORM set_config('test.staff_p', (SELECT id::text FROM public.staff WHERE profile_id = (SELECT id FROM public.profiles WHERE email = 'av.provider@test.local')), false);
+    PERFORM set_config('test.staff_b', (SELECT id::text FROM public.staff WHERE profile_id = (SELECT id FROM public.profiles WHERE email = 'av.prov2@test.local')), false);
 
--- Advance-notice fixture: requires 7 days notice.
-INSERT INTO public.services (name, description, duration_minutes, price, currency, active, sort_order, booking_rules)
-SELECT 'Availability Advance Service', 'fixture', 60, 100.00, 'AED', true, 802,
-       '{"min_advance_days": 7}'::jsonb
-WHERE NOT EXISTS (SELECT 1 FROM public.services WHERE name = 'Availability Advance Service');
+    -- Fixture provider P works at BOTH dubai + abu-dhabi (multi-branch staff).
+    INSERT INTO public.staff_branches (staff_id, branch_id, primary_branch, active) VALUES
+        (public.get_setting_uuid('test.staff_p'), public.get_setting_uuid('test.dxb'), true,  true),
+        (public.get_setting_uuid('test.staff_p'), public.get_setting_uuid('test.auh'), false, true);
 
--- Fixture providers at the Dubai branch (provider 2 has NO weekly
--- schedule so it can never take a slot).
-SELECT public.ensure_demo_staff(
-    'avl.provider@test.local', '+971500000301',
-    'Avl Test Provider', 'Fixture Provider',
-    ARRAY['Fixture']
-);
-SELECT public.ensure_demo_staff(
-    'avl.provider2@test.local', '+971500000302',
-    'Avl Test Provider 2', 'Fixture Provider 2',
-    ARRAY['Fixture']
-);
+    -- Fixture provider B works at dubai only (used for the capacity test).
+    INSERT INTO public.staff_branches (staff_id, branch_id, primary_branch, active) VALUES
+        (public.get_setting_uuid('test.staff_b'), public.get_setting_uuid('test.dxb'), false, true);
 
--- Fixture patient (needed to attach appointments).
-INSERT INTO auth.users (
-    instance_id, id, aud, role, email, encrypted_password,
-    email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
-    created_at, updated_at
-)
-SELECT '00000000-0000-0000-0000-000000000000', gen_random_uuid(),
-       'authenticated', 'authenticated', 'avl.patient@test.local',
-       crypt('Password123!', gen_salt('bf')), now(),
-       '{"provider":"email","providers":["email"]}',
-       jsonb_build_object('role', 'patient', 'full_name', 'Avl Test Patient', 'mobile_number', '+971500000303'),
-       now(), now();
+    -- Weekly availability 10:00–20:00 for both providers, every day.
+    INSERT INTO public.staff_availability (staff_id, day_of_week, start_time, end_time)
+    SELECT s.id, d.day_of_week, '10:00', '20:00'
+    FROM public.staff s
+    CROSS JOIN (SELECT generate_series(0, 6) AS day_of_week) d
+    WHERE s.profile_id IN (SELECT id FROM public.profiles WHERE email LIKE 'av.prov%')
+    ON CONFLICT (staff_id, day_of_week) DO NOTHING;
 
-PERFORM set_config('test.service', (SELECT id::text FROM public.services WHERE name = 'Availability Test Service'), false);
-PERFORM set_config('test.svc_buffer', (SELECT id::text FROM public.services WHERE name = 'Availability Buffer Service'), false);
-PERFORM set_config('test.svc_advance', (SELECT id::text FROM public.services WHERE name = 'Availability Advance Service'), false);
-PERFORM set_config('test.staff', (SELECT st.id::text FROM public.staff st JOIN public.profiles p ON p.id = st.profile_id WHERE p.full_name = 'Avl Test Provider'), false);
-PERFORM set_config('test.staff2', (SELECT st.id::text FROM public.staff st JOIN public.profiles p ON p.id = st.profile_id WHERE p.full_name = 'Avl Test Provider 2'), false);
-PERFORM set_config('test.patient', (SELECT id::text FROM public.profiles WHERE email = 'avl.patient@test.local'), false);
+    -- Fixture services + availability
+    INSERT INTO public.services (name, description, duration_minutes, price, currency, active, sort_order, buffer_minutes)
+    VALUES
+        ('AV Test Service',    'av fixture 60min',       60, 350.00, 'AED', true, 920, 0),
+        ('AV Buffer Service',  'av fixture 30min+buffer', 30, 200.00, 'AED', true, 921, 30);
 
--- Fixture services available at BOTH demo branches (005 only covers
--- the services that existed when it ran, so we add these here).
-INSERT INTO public.service_branches (service_id, branch_id, available, currency)
-SELECT id, b.id, true, 'AED'
-FROM public.services s
-CROSS JOIN public.branches b
-WHERE s.name IN ('Availability Test Service', 'Availability Buffer Service', 'Availability Advance Service')
-  AND b.slug IN ('dubai', 'abu-dhabi')
-ON CONFLICT (service_id, branch_id) DO NOTHING;
+    PERFORM set_config('test.svc', (SELECT id::text FROM public.services WHERE name = 'AV Test Service'), false);
+    PERFORM set_config('test.buf', (SELECT id::text FROM public.services WHERE name = 'AV Buffer Service'), false);
 
--- Provider 1 works at BOTH branch fixtures (multi-branch staff), with
--- a Mon–Sat 10:00–20:00 weekly schedule.
-INSERT INTO public.staff_branches (staff_id, branch_id, primary_branch, active)
-SELECT public.get_setting_uuid('test.staff'), b.id, (b.slug = 'dubai'), true
-FROM public.branches b
-WHERE b.slug IN ('dubai', 'abu-dhabi')
-ON CONFLICT (staff_id, branch_id) DO NOTHING;
+    INSERT INTO public.service_branches (service_id, branch_id, available, currency)
+    VALUES
+        (public.get_setting_uuid('test.svc'), public.get_setting_uuid('test.dxb'), true, 'AED'),
+        (public.get_setting_uuid('test.svc'), public.get_setting_uuid('test.auh'), true, 'AED'),
+        (public.get_setting_uuid('test.buf'), public.get_setting_uuid('test.dxb'), true, 'AED');
 
-INSERT INTO public.staff_availability (staff_id, day_of_week, start_time, end_time)
-SELECT public.get_setting_uuid('test.staff'), d.day_of_week, '10:00', '20:00'
-FROM (SELECT generate_series(1, 6) AS day_of_week) d
-ON CONFLICT (staff_id, day_of_week) DO NOTHING;
-
--- Provider 2 is assigned to Dubai only and has NO weekly schedule.
-INSERT INTO public.staff_branches (staff_id, branch_id, primary_branch, active)
-SELECT public.get_setting_uuid('test.staff2'), public.get_setting_uuid('test.branch'), false, true
-ON CONFLICT (staff_id, branch_id) DO NOTHING;
-
-RAISE NOTICE 'availability fixtures ready';
+    RAISE NOTICE 'T12 fixtures ready';
+END;
+$$;
 
 -- ─────────────────────────────────────────────────────────────
--- TEST 1: provider list for the branch
+-- TEST 1: slots respect branch hours in Asia/Dubai
 -- ─────────────────────────────────────────────────────────────
+
+-- 60 min service on a 30 min grid over 10:00–20:00 → 19 slots.
+SELECT public.expect(
+    (SELECT count(*)
+       FROM public.get_availability(
+           public.get_setting_uuid('test.dxb'),
+           public.get_setting_uuid('test.svc'),
+           public.get_setting_date('test.day'),
+           public.get_setting_date('test.day'),
+           public.get_setting_uuid('test.staff_p'))) = 19,
+    'slots generated for the branch open day (10:00-20:00, 60min service, 30min grid -> 19)'
+);
+
+-- All slot times are Asia/Dubai wall times within [10:00, 20:00].
+SELECT public.expect(
+    NOT EXISTS (
+        SELECT 1
+          FROM public.get_availability(
+              public.get_setting_uuid('test.dxb'),
+              public.get_setting_uuid('test.svc'),
+              public.get_setting_date('test.day'),
+              public.get_setting_date('test.day'),
+              public.get_setting_uuid('test.staff_p')) a
+         WHERE (a.slot_start AT TIME ZONE 'Asia/Dubai')::time < '10:00'::time
+            OR (a.slot_end   AT TIME ZONE 'Asia/Dubai')::time > '20:00'::time
+            OR a.slot_date <> public.get_setting_date('test.day')
+    ),
+    'every slot is within Asia/Dubai branch hours on the requested date'
+);
+
+-- Branch + timezone carried in every slot row.
+SELECT public.expect(
+    (SELECT bool_and(x.branch_id = public.get_setting_uuid('test.dxb')
+                     AND x.branch_name = 'The Perfect Look — Dubai'
+                     AND x.timezone = 'Asia/Dubai'
+                     AND x.service_id = public.get_setting_uuid('test.svc')
+                     AND x.duration_minutes = 60)
+       FROM public.get_availability(
+           public.get_setting_uuid('test.dxb'),
+           public.get_setting_uuid('test.svc'),
+           public.get_setting_date('test.day'),
+           public.get_setting_date('test.day'),
+           public.get_setting_uuid('test.staff_p')) x),
+    'branch and timezone are carried in every slot row'
+);
+
+-- The engine also returns nothing for a closed day (Sunday).
+SELECT public.expect(
+    (SELECT count(*) = 0
+       FROM public.get_availability(
+           public.get_setting_uuid('test.dxb'),
+           public.get_setting_uuid('test.svc'),
+           (public.get_setting_date('test.day') + ((7 - EXTRACT(DOW FROM public.get_setting_date('test.day'))::int + 7) % 7)::int),
+           (public.get_setting_date('test.day') + ((7 - EXTRACT(DOW FROM public.get_setting_date('test.day'))::int + 7) % 7)::int),
+           public.get_setting_uuid('test.staff_p'))),
+    'no slots on a closed day (Sunday)'
+);
+
+-- ─────────────────────────────────────────────────────────────
+-- TEST 2: holidays and branch closures remove the whole day
+-- ─────────────────────────────────────────────────────────────
+
+INSERT INTO public.holidays (date, reason)
+VALUES (public.get_setting_date('test.day'), 'AV test holiday');
 
 SELECT public.expect(
-    EXISTS (
-        SELECT 1 FROM public.get_branch_providers(public.get_setting_uuid('test.branch'))
-        WHERE id = public.get_setting_uuid('test.staff')
-          AND full_name = 'Avl Test Provider'
-          AND primary_branch = true
-    ),
-    'branch provider list contains the fixture provider with primary flag'
+    (SELECT count(*) = 0
+       FROM public.get_availability(
+           public.get_setting_uuid('test.dxb'),
+           public.get_setting_uuid('test.svc'),
+           public.get_setting_date('test.day'),
+           public.get_setting_date('test.day'),
+           public.get_setting_uuid('test.staff_p'))),
+    'clinic holiday removes all slots for the day'
 );
+
+DELETE FROM public.holidays WHERE date = public.get_setting_date('test.day');
+
+INSERT INTO public.branch_closures (branch_id, date, reason)
+VALUES (public.get_setting_uuid('test.dxb'), public.get_setting_date('test.day'), 'AV test closure');
 
 SELECT public.expect(
-    EXISTS (
-        SELECT 1 FROM public.get_branch_providers(public.get_setting_uuid('test.branch'))
-        WHERE id = public.get_setting_uuid('test.staff2')
-            AND primary_branch = false
-    ),
-    'provider 2 is listed for the Dubai branch (assigned, no weekly schedule yet)'
+    (SELECT count(*) = 0
+       FROM public.get_availability(
+           public.get_setting_uuid('test.dxb'),
+           public.get_setting_uuid('test.svc'),
+           public.get_setting_date('test.day'),
+           public.get_setting_date('test.day'),
+           public.get_setting_uuid('test.staff_p'))),
+    'branch closure removes all slots for the day'
 );
 
+DELETE FROM public.branch_closures WHERE branch_id = public.get_setting_uuid('test.dxb') AND date = public.get_setting_date('test.day');
+
 -- ─────────────────────────────────────────────────────────────
--- TEST 2: working day generates a valid slot grid
+-- TEST 3: provider blocked period (leave) removes covered slots
+-- ─────────────────────────────────────────────────────────────
+
+INSERT INTO public.blocked_periods (staff_id, start_datetime, end_datetime, reason)
+VALUES (
+    public.get_setting_uuid('test.staff_p'),
+    (public.get_setting_date('test.day') + TIME '10:00') AT TIME ZONE 'Asia/Dubai',
+    (public.get_setting_date('test.day') + TIME '13:00') AT TIME ZONE 'Asia/Dubai',
+    'AV test leave'
+);
+
+-- 10:00→12:30 starts (6) are covered by the block; 13:00+ remain → 19-6=13.
+SELECT public.expect(
+    (SELECT count(*) = 13
+       FROM public.get_availability(
+           public.get_setting_uuid('test.dxb'),
+           public.get_setting_uuid('test.svc'),
+           public.get_setting_date('test.day'),
+           public.get_setting_date('test.day'),
+           public.get_setting_uuid('test.staff_p'))),
+    'provider leave removes the covered slots (6 removed -> 13 remain)'
+);
+
+DELETE FROM public.blocked_periods WHERE reason = 'AV test leave';
+
+-- ─────────────────────────────────────────────────────────────
+-- TEST 4: existing appointments (with buffers) remove slots
 -- ─────────────────────────────────────────────────────────────
 
 DO $$
 DECLARE
-    v_day  date := public.get_setting_date('test.day');
-    v_branch uuid := public.get_setting_uuid('test.branch');
-    v_svc  uuid := public.get_setting_uuid('test.service');
-    v_staff uuid := public.get_setting_uuid('test.staff');
-    v_count int;
-    v_first timestamptz;
-    v_ok_first time;
-    v_ok_grid boolean;
-    v_ok_end boolean;
-    v_ok_date boolean;
+    v_patient uuid := public.get_setting_uuid('test.p');
+    v_staff   uuid := public.get_setting_uuid('test.staff_p');
+    v_svc     uuid := public.get_setting_uuid('test.svc');
+    v_buf     uuid := public.get_setting_uuid('test.buf');
+    v_dxb     uuid := public.get_setting_uuid('test.dxb');
+    v_day     date  := public.get_setting_date('test.day');
+    v_start   timestamptz := (v_day + TIME '10:00') AT TIME ZONE 'Asia/Dubai';
+    v_appt    uuid;
 BEGIN
-    SELECT count(*), min(slot_start) INTO v_count, v_first
-      FROM public.get_availability(v_branch, v_svc, v_day, v_day, NULL::uuid[]);
+    PERFORM public.reserve_slot(v_dxb, v_svc, v_patient, v_start, v_staff, 't4', 'web');
+    SELECT id INTO v_appt FROM public.appointments WHERE notes = 't4';
 
-    PERFORM public.expect(v_count = 19, format('mon-sat 10:00-20:00, 60min svc, 30min grid -> 19 slots (got %)', v_count));
-
-    v_ok_first := (v_first AT TIME ZONE 'Asia/Dubai')::time = time '10:00';
-    PERFORM public.expect(v_ok_first, 'first slot starts at the branch opening time 10:00 (Asia/Dubai)');
-
-    v_ok_grid := NOT EXISTS (
-        SELECT 1 FROM public.get_availability(v_branch, v_svc, v_day, v_day, NULL::uuid[])
-        WHERE extract(minute FROM (slot_start AT TIME ZONE 'Asia/Dubai')) % 30 <> 0
-           OR extract(second FROM (slot_start AT TIME ZONE 'Asia/Dubai')) <> 0
+    -- 60min booking 10:00–11:00 blocks the 10:00 and 10:30 starts → 17.
+    PERFORM public.expect(
+        (SELECT count(*) = 17
+           FROM public.get_availability(v_dxb, v_svc, v_day, v_day, v_staff)),
+        'existing appointment removes itself and overlapping slots (17 remain)'
     );
-    PERFORM public.expect(v_ok_grid, 'every slot sits on the 30-minute grid in branch time');
-
-    v_ok_end := NOT EXISTS (
-        SELECT 1 FROM public.get_availability(v_branch, v_svc, v_day, v_day, NULL::uuid[])
-        WHERE slot_end > (v_day + time '20:00') AT TIME ZONE 'Asia/Dubai'
-    );
-    PERFORM public.expect(v_ok_end, 'no slot ends after branch closing (20:00)');
-
-    v_ok_date := NOT EXISTS (
-        SELECT 1 FROM public.get_availability(v_branch, v_svc, v_day, v_day, NULL::uuid[])
-        WHERE booking_date <> v_day
-    );
-    PERFORM public.expect(v_ok_date, 'returned slots carry the requested branch-local date');
-
-    -- Duration is respected: slot length == service duration.
     PERFORM public.expect(
         NOT EXISTS (
-            SELECT 1 FROM public.get_availability(v_branch, v_svc, v_day, v_day, NULL::uuid[])
-            WHERE extract(epoch FROM (slot_end - slot_start))::int <> 3600
+            SELECT 1 FROM public.get_availability(v_dxb, v_svc, v_day, v_day, v_staff) a
+             WHERE (a.slot_start AT TIME ZONE 'Asia/Dubai')::time IN ('10:00', '10:30')
+        )
+        AND EXISTS (
+            SELECT 1 FROM public.get_availability(v_dxb, v_svc, v_day, v_day, v_staff) a
+             WHERE (a.slot_start AT TIME ZONE 'Asia/Dubai')::time = '11:00'
         ),
-        'every slot lasts exactly the 60-minute service duration'
+        '10:00 and 10:30 are gone, 11:00 is open'
     );
 
-    -- The engine offers at least one provider for these slots.
+    DELETE FROM public.appointments WHERE id = v_appt;
+
+    -- Buffered service: 10:00–10:30 booking with a 30min buffer occupies
+    -- [10:00, 11:00) → removes the 10:00 and 10:30 starts (20 total → 18).
+    PERFORM public.reserve_slot(
+        v_dxb, v_buf, v_patient,
+        (v_day + TIME '10:00') AT TIME ZONE 'Asia/Dubai', v_staff, 't4b', 'web');
+    SELECT id INTO v_appt FROM public.appointments WHERE notes = 't4b';
+
     PERFORM public.expect(
-        EXISTS (
-            SELECT 1 FROM public.get_availability(v_branch, v_svc, v_day, v_day, NULL::uuid[])
-            WHERE v_staff = ANY (staff_ids)
-        ),
-        'slot carries the fixture provider id'
+        (SELECT count(*) = 18
+           FROM public.get_availability(v_dxb, v_buf, v_day, v_day, v_staff)),
+        'buffer occupies the follow-up slot too (30min booking + 30min buffer -> 18 remain)'
     );
-END;
-$$;
-
--- ─────────────────────────────────────────────────────────────
--- TEST 3: clinic-wide holiday closes the day
--- ─────────────────────────────────────────────────────────────
-
-DO $$
-DECLARE
-    v_day date := public.get_setting_date('test.day');
-    v_branch uuid := public.get_setting_uuid('test.branch');
-    v_svc uuid := public.get_setting_uuid('test.service');
-    v_count int;
-BEGIN
-    INSERT INTO public.holidays (date, reason) VALUES (v_day, 'test holiday');
-    SELECT count(*) INTO v_count FROM public.get_availability(v_branch, v_svc, v_day, v_day, NULL::uuid[]);
-    PERFORM public.expect(v_count = 0, 'no slots on a clinic-wide holiday');
-    DELETE FROM public.holidays WHERE date = v_day AND reason = 'test holiday';
-END;
-$$;
-
--- ─────────────────────────────────────────────────────────────
--- TEST 4: branch closure closes the day
--- ─────────────────────────────────────────────────────────────
-
-DO $$
-DECLARE
-    v_day date := public.get_setting_date('test.day');
-    v_branch uuid := public.get_setting_uuid('test.branch');
-    v_svc uuid := public.get_setting_uuid('test.service');
-    v_count int;
-BEGIN
-    INSERT INTO public.branch_closures (branch_id, date, reason)
-    VALUES (v_branch, v_day, 'test closure');
-    SELECT count(*) INTO v_count FROM public.get_availability(v_branch, v_svc, v_day, v_day, NULL::uuid[]);
-    PERFORM public.expect(v_count = 0, 'no slots on a branch closure day');
-    DELETE FROM public.branch_closures WHERE branch_id = v_branch AND date = v_day;
-END;
-$$;
-
--- ─────────────────────────────────────────────────────────────
--- TEST 5: provider filter
--- ─────────────────────────────────────────────────────────────
-
-DO $$
-DECLARE
-    v_day date := public.get_setting_date('test.day');
-    v_branch uuid := public.get_setting_uuid('test.branch');
-    v_svc uuid := public.get_setting_uuid('test.service');
-    v_staff uuid := public.get_setting_uuid('test.staff');
-    v_staff2 uuid := public.get_setting_uuid('test.staff2');
-    v_count int;
-BEGIN
-    SELECT count(*) INTO v_count
-      FROM public.get_availability(v_branch, v_svc, v_day, v_day, ARRAY[v_staff]::uuid[]);
-    PERFORM public.expect(v_count = 19, 'filtering to an available provider keeps the 19 slots');
-
-    SELECT count(*) INTO v_count
-      FROM public.get_availability(v_branch, v_svc, v_day, v_day, ARRAY[v_staff2]::uuid[]);
-    PERFORM public.expect(v_count = 0, 'a provider without a weekly schedule yields zero slots');
-
     PERFORM public.expect(
         NOT EXISTS (
-            SELECT 1 FROM public.get_availability(v_branch, v_svc, v_day, v_day, NULL::uuid[])
-             WHERE NOT (v_staff = ANY (staff_ids))
+            SELECT 1 FROM public.get_availability(v_dxb, v_buf, v_day, v_day, v_staff) a
+             WHERE (a.slot_start AT TIME ZONE 'Asia/Dubai')::time IN ('10:00', '10:30')
+        )
+        AND EXISTS (
+            SELECT 1 FROM public.get_availability(v_dxb, v_buf, v_day, v_day, v_staff) a
+             WHERE (a.slot_start AT TIME ZONE 'Asia/Dubai')::time = '11:00'
         ),
-        'every unfiltered slot is covered by the branch provider'
+        'buffered slots 10:00/10:30 are gone, 11:00 is open'
     );
+
+    DELETE FROM public.appointments WHERE id = v_appt;
 END;
 $$;
 
 -- ─────────────────────────────────────────────────────────────
--- TEST 6: existing appointment removes its slot
+-- TEST 5: multi-branch staff cannot be double-booked
 -- ─────────────────────────────────────────────────────────────
 
 DO $$
 DECLARE
-    v_day date := public.get_setting_date('test.day');
-    v_branch uuid := public.get_setting_uuid('test.branch');
-    v_svc uuid := public.get_setting_uuid('test.service');
-    v_staff uuid := public.get_setting_uuid('test.staff');
-    v_patient uuid := public.get_setting_uuid('test.patient');
-    v_count int;
-    v_taken timestamptz := (v_day + time '11:00') AT TIME ZONE 'Asia/Dubai';
+    v_patient uuid := public.get_setting_uuid('test.p');
+    v_staff   uuid := public.get_setting_uuid('test.staff_p');
+    v_svc     uuid := public.get_setting_uuid('test.svc');
+    v_dxb     uuid := public.get_setting_uuid('test.dxb');
+    v_auh     uuid := public.get_setting_uuid('test.auh');
+    v_day     date  := public.get_setting_date('test.day');
+    v_10      timestamptz := (v_day + TIME '10:00') AT TIME ZONE 'Asia/Dubai';
+    v_appt    uuid;
 BEGIN
-    INSERT INTO public.appointments (
-        patient_id, service_id, staff_id, branch_id,
-        scheduled_start, scheduled_end, status,
-        client_number, service_name_snapshot, price_snapshot, currency_snapshot
-    )
-    SELECT v_patient, v_svc, v_staff, v_branch,
-           v_taken, v_taken + interval '1 hour', 'Confirmed',
-           p.client_number, s.name, COALESCE(sb.price, s.price), 'AED'
-      FROM public.profiles p
-      JOIN public.services s ON s.id = v_svc
-      LEFT JOIN public.service_branches sb ON sb.service_id = s.id AND sb.branch_id = v_branch
-     WHERE p.id = v_patient;
+    -- Book provider P at Dubai 10:00.
+    SELECT id INTO v_appt FROM public.reserve_slot(v_dxb, v_svc, v_patient, v_10, v_staff, 't5', 'web');
 
-    SELECT count(*) INTO v_count
-      FROM public.get_availability(v_branch, v_svc, v_day, v_day, ARRAY[v_staff]::uuid[]);
-    PERFORM public.expect(v_count = 18, 'an 11:00 booking removes exactly the 11:00 slot (19 -> 18)');
-
+    -- Slot generation at Abu Dhabi must NOT offer the conflicting start
+    -- while keeping the rest of the day open (P is a multi-branch provider).
+    PERFORM public.expect(
+        (SELECT count(*) = 17
+           FROM public.get_availability(v_auh, v_svc, v_day, v_day, v_staff)),
+        'abu-dhabi slot list excludes the cross-branch conflict (17 of 19 remain)'
+    );
     PERFORM public.expect(
         NOT EXISTS (
-            SELECT 1 FROM public.get_availability(v_branch, v_svc, v_day, v_day, ARRAY[v_staff]::uuid[])
-            WHERE slot_start = v_taken
+            SELECT 1 FROM public.get_availability(v_auh, v_svc, v_day, v_day, v_staff) a
+             WHERE (a.slot_start AT TIME ZONE 'Asia/Dubai')::time IN ('10:00', '10:30')
+        )
+        AND EXISTS (
+            SELECT 1 FROM public.get_availability(v_auh, v_svc, v_day, v_day, v_staff) a
+             WHERE (a.slot_start AT TIME ZONE 'Asia/Dubai')::time = '11:00'
         ),
-        'the booked slot is unavailable'
+        'provider booked at dubai 10:00 -> not offered 10:00/10:30 at abu-dhabi (11:00 open)'
     );
 
+    -- reserve_slot at Abu Dhabi 10:00 must be rejected atomically.
+    BEGIN
+        PERFORM public.reserve_slot(v_auh, v_svc, v_patient, v_10, v_staff, 't5b', 'web');
+        PERFORM public.expect(false, 'cross-branch reserve_slot is rejected');
+    EXCEPTION WHEN OTHERS THEN
+        PERFORM public.expect(
+            SQLERRM = 'The selected timeslot is not available anymore',
+            'cross-branch reserve_slot rejected with the stable message'
+        );
+    END;
     PERFORM public.expect(
-        EXISTS (
-            SELECT 1 FROM public.get_availability(v_branch, v_svc, v_day, v_day, ARRAY[v_staff]::uuid[])
-            WHERE slot_start = v_taken + interval '1 hour'
-        ),
-        'the next free slot (12:00) remains available when there is no buffer'
-    );
-END;
-$$;
-
--- ─────────────────────────────────────────────────────────────
--- TEST 7: service buffer protects the following slot
--- ─────────────────────────────────────────────────────────────
-
-DO $$
-DECLARE
-    v_day date := public.get_setting_date('test.day');
-    v_branch uuid := public.get_setting_uuid('test.branch');
-    v_svc uuid := public.get_setting_uuid('test.svc_buffer');
-    v_staff uuid := public.get_setting_uuid('test.staff');
-    v_patient uuid := public.get_setting_uuid('test.patient');
-    v_15 timestamptz := (v_day + time '15:00') AT TIME ZONE 'Asia/Dubai';
-    v_filt uuid := public.get_setting_uuid('test.staff');
-BEGIN
-    -- 15:00–16:00 booking for the buffer service (15 min buffer).
-    -- (11:00 is already taken by TEST 6 — same provider/start would
-    -- trip the double-booking index.)
-    INSERT INTO public.appointments (
-        patient_id, service_id, staff_id, branch_id,
-        scheduled_start, scheduled_end, status,
-        client_number, service_name_snapshot, price_snapshot, currency_snapshot
-    )
-    SELECT v_patient, v_svc, v_staff, v_branch,
-           v_15, v_15 + interval '1 hour', 'Confirmed',
-           p.client_number, s.name, 100.00, 'AED'
-      FROM public.profiles p
-      JOIN public.services s ON s.id = v_svc
-     WHERE p.id = v_patient;
-
-    PERFORM public.expect(
-        NOT EXISTS (
-            SELECT 1 FROM public.get_availability(v_branch, v_svc, v_day, v_day, ARRAY[v_filt]::uuid[])
-            WHERE slot_start = v_15 + interval '1 hour'
-        ),
-        'buffer service: 16:00 is blocked while the post-booking buffer (until 16:15) is open'
+        NOT EXISTS (SELECT 1 FROM public.appointments WHERE notes = 't5b'),
+        'rejected reservation left no appointment behind'
     );
 
-    -- The 16:30 grid slot starts after the 16:15 buffer clears.
-    PERFORM public.expect(
-        EXISTS (
-            SELECT 1 FROM public.get_availability(v_branch, v_svc, v_day, v_day, ARRAY[v_filt]::uuid[])
-            WHERE slot_start = v_15 + interval '1 hour 30 minutes'
-        ),
-        'buffer service: the next grid slot (16:30) is available once the buffer clears'
-    );
-END;
-$$;
-
--- ─────────────────────────────────────────────────────────────
--- TEST 8: cross-branch block (provider at two branches)
--- ─────────────────────────────────────────────────────────────
-
-DO $$
-DECLARE
-    v_day date := public.get_setting_date('test.day');
-    v_dubai uuid := public.get_setting_uuid('test.branch');
-    v_auh uuid := public.get_setting_uuid('test.branch_auh');
-    v_svc uuid := public.get_setting_uuid('test.service');
-    v_staff uuid := public.get_setting_uuid('test.staff');
-    v_patient uuid := public.get_setting_uuid('test.patient');
-    v_14 timestamptz := (v_day + time '14:00') AT TIME ZONE 'Asia/Dubai';
-BEGIN
-    -- Book provider 1 at Dubai 14:00. (The service is available at
-    -- the Abu Dhabi branch via the 005 cross-join seed.)
-    INSERT INTO public.appointments (
-        patient_id, service_id, staff_id, branch_id,
-        scheduled_start, scheduled_end, status,
-        client_number, service_name_snapshot, price_snapshot, currency_snapshot
-    )
-    SELECT v_patient, v_svc, v_staff, v_dubai,
-           v_14, v_14 + interval '1 hour', 'Confirmed',
-           p.client_number, s.name, COALESCE(sb.price, s.price), 'AED'
-      FROM public.profiles p
-      JOIN public.services s ON s.id = v_svc
-      LEFT JOIN public.service_branches sb ON sb.service_id = s.id AND sb.branch_id = v_dubai
-     WHERE p.id = v_patient;
-
-    PERFORM public.expect(
-        EXISTS (
-            SELECT 1 FROM public.service_branches
-            WHERE service_id = v_svc AND branch_id = v_auh AND available = true
-        ),
-        'fixture service is available at the Abu Dhabi branch'
-    );
-
-    PERFORM public.expect(
-        NOT EXISTS (
-            SELECT 1 FROM public.get_availability(v_auh, v_svc, v_day, v_day, ARRAY[v_staff]::uuid[])
-            WHERE slot_start = v_14
-        ),
-        'a Dubai 14:00 booking removes the Abu Dhabi 14:00 slot for the same provider'
-    );
-
-    PERFORM public.expect(
-        EXISTS (
-            SELECT 1 FROM public.get_availability(v_auh, v_svc, v_day, v_day, ARRAY[v_staff]::uuid[])
-        ),
-        'the provider still has other slots at the second branch'
-    );
-END;
-$$;
-
--- ─────────────────────────────────────────────────────────────
--- TEST 9: DB-level single-success guarantee under parallelism
--- ─────────────────────────────────────────────────────────────
-
-DO $$
-DECLARE
-    v_day date := public.get_setting_date('test.day');
-    v_dubai uuid := public.get_setting_uuid('test.branch');
-    v_auh uuid := public.get_setting_uuid('test.branch_auh');
-    v_svc uuid := public.get_setting_uuid('test.service');
-    v_staff uuid := public.get_setting_uuid('test.staff');
-    v_patient uuid := public.get_setting_uuid('test.patient');
-    v_16 timestamptz := (v_day + time '16:00') AT TIME ZONE 'Asia/Dubai';
-    v_second_ok boolean := true;
-BEGIN
-    PERFORM public.expect(
-        EXISTS (
-            SELECT 1 FROM pg_indexes
-            WHERE indexname = 'idx_appointments_no_double_book'
-        ),
-        'partial unique index (staff_id, scheduled_start) exists'
-    );
-
-    -- First "parallel" request wins the 16:00 slot (at Dubai).
-    INSERT INTO public.appointments (
-        patient_id, service_id, staff_id, branch_id,
-        scheduled_start, scheduled_end, status,
-        client_number, service_name_snapshot, price_snapshot, currency_snapshot
-    )
-    SELECT v_patient, v_svc, v_staff, v_dubai,
-           v_16, v_16 + interval '1 hour', 'Pending',
-           p.client_number, s.name, COALESCE(sb.price, s.price), 'AED'
-      FROM public.profiles p
-      JOIN public.services s ON s.id = v_svc
-      LEFT JOIN public.service_branches sb ON sb.service_id = s.id AND sb.branch_id = v_dubai
-     WHERE p.id = v_patient;
-
-    -- Second concurrent request for the SAME slot at another branch
-    -- must fail with a unique violation — one booking only.
+    -- A raw insert that bypasses the function is still stopped by the DB
+    -- (different start, overlaps the Dubai booking -> EXCLUDE constraint).
     BEGIN
         INSERT INTO public.appointments (
-            patient_id, service_id, staff_id, branch_id,
-            scheduled_start, scheduled_end, status,
-            client_number, service_name_snapshot, price_snapshot, currency_snapshot
-        )
-        SELECT v_patient, v_svc, v_staff, v_auh,
-               v_16, v_16 + interval '1 hour', 'Pending',
-               p.client_number, s.name, COALESCE(sb.price, s.price), 'AED'
-          FROM public.profiles p
-          JOIN public.services s ON s.id = v_svc
-          LEFT JOIN public.service_branches sb ON sb.service_id = s.id AND sb.branch_id = v_auh
-         WHERE p.id = v_patient;
-        v_second_ok := false;
-    EXCEPTION WHEN unique_violation THEN
-        NULL; -- expected
+            patient_id, service_id, branch_id, staff_id,
+            scheduled_start, scheduled_end, status, notes,
+            client_number, service_name_snapshot, price_snapshot,
+            currency_snapshot, source_channel, buffer_minutes
+        ) VALUES (
+            v_patient, v_svc, v_auh, v_staff,
+            v_10 + interval '30 minutes', v_10 + interval '90 minutes',
+            'Pending', 't5c', '0', 'x', 0, 'AED', 'web', 0
+        );
+        PERFORM public.expect(false, 'raw overlapping insert is rejected');
+    EXCEPTION WHEN exclusion_violation OR unique_violation THEN
+        PERFORM public.expect(true, 'raw overlapping insert rejected by DB constraint');
     END;
 
-    PERFORM public.expect(v_second_ok, 'the second concurrent request for one slot fails (exactly one booking)');
+    -- The exact same start at a second branch is stopped by the T3 unique index.
+    BEGIN
+        INSERT INTO public.appointments (
+            patient_id, service_id, branch_id, staff_id,
+            scheduled_start, scheduled_end, status, notes,
+            client_number, service_name_snapshot, price_snapshot,
+            currency_snapshot, source_channel, buffer_minutes
+        ) VALUES (
+            v_patient, v_svc, v_auh, v_staff,
+            v_10, v_10 + interval '60 minutes',
+            'Pending', 't5d', '0', 'x', 0, 'AED', 'web', 0
+        );
+        PERFORM public.expect(false, 'raw same-start insert at second branch is rejected');
+    EXCEPTION WHEN unique_violation OR exclusion_violation THEN
+        PERFORM public.expect(true, 'raw same-start insert rejected by unique index');
+    END;
+
+    DELETE FROM public.appointments WHERE id = v_appt;
 END;
 $$;
 
 -- ─────────────────────────────────────────────────────────────
--- TEST 10: past dates never produce slots
+-- TEST 6: branch capacity
 -- ─────────────────────────────────────────────────────────────
 
 DO $$
 DECLARE
-    v_branch uuid := public.get_setting_uuid('test.branch');
-    v_svc uuid := public.get_setting_uuid('test.service');
-    v_past date := (now() AT TIME ZONE 'Asia/Dubai')::date - 1;
-    v_count int;
+    v_patient uuid := public.get_setting_uuid('test.p');
+    v_staff_p uuid := public.get_setting_uuid('test.staff_p');
+    v_staff_b uuid := public.get_setting_uuid('test.staff_b');
+    v_svc     uuid := public.get_setting_uuid('test.svc');
+    v_dxb     uuid := public.get_setting_uuid('test.dxb');
+    v_day     date  := public.get_setting_date('test.day');
+    v_dummy   uuid;
 BEGIN
-    SELECT count(*) INTO v_count
-      FROM public.get_availability(v_branch, v_svc, v_past, v_past, NULL::uuid[]);
-    PERFORM public.expect(v_count = 0, 'no slots for a past date');
+    UPDATE public.branches SET max_concurrent_appointments = 1 WHERE id = v_dxb;
 
-    -- A range ending before today also yields nothing: the engine
-    -- clamps the window to today..today + booking_window - 1.
-    SELECT count(*) INTO v_count
-      FROM public.get_availability(v_branch, v_svc, v_past - 3, v_past, NULL::uuid[]);
-    PERFORM public.expect(v_count = 0, 'no slots when the whole requested range is in the past');
+    SELECT id FROM public.reserve_slot(
+        v_dxb, v_svc, v_patient,
+        (v_day + TIME '10:00') AT TIME ZONE 'Asia/Dubai', v_staff_p, 't6', 'web'
+    ) INTO v_dummy;
+
+    -- Another provider's 10:00 slot is blocked by capacity; 11:00 stays open.
+    PERFORM public.expect(
+        NOT EXISTS (
+            SELECT 1 FROM public.get_availability(v_dxb, v_svc, v_day, v_day, v_staff_b) a
+             WHERE (a.slot_start AT TIME ZONE 'Asia/Dubai')::time = '10:00'
+        )
+        AND EXISTS (
+            SELECT 1 FROM public.get_availability(v_dxb, v_svc, v_day, v_day, v_staff_b) a
+             WHERE (a.slot_start AT TIME ZONE 'Asia/Dubai')::time = '11:00'
+        ),
+        'branch capacity 1 removes the second concurrent provider slot, later slot stays open'
+    );
+
+    BEGIN
+        PERFORM public.reserve_slot(
+            v_dxb, v_svc, v_patient,
+            (v_day + TIME '10:00') AT TIME ZONE 'Asia/Dubai', v_staff_b, 't6b', 'web'
+        );
+        PERFORM public.expect(false, 'capacity-full reserve_slot is rejected');
+    EXCEPTION WHEN OTHERS THEN
+        PERFORM public.expect(
+            SQLERRM = 'The selected timeslot is not available anymore',
+            'capacity-full reserve_slot rejected with the stable message'
+        );
+    END;
+
+    -- 11:00 for the second provider books fine ([11:00,12:00) does not overlap).
+    PERFORM public.reserve_slot(
+        v_dxb, v_svc, v_patient,
+        (v_day + TIME '11:00') AT TIME ZONE 'Asia/Dubai', v_staff_b, 't6c', 'web'
+    );
+
+    UPDATE public.branches SET max_concurrent_appointments = NULL WHERE id = v_dxb;
+    DELETE FROM public.appointments WHERE notes IN ('t6', 't6b', 't6c');
 END;
 $$;
 
 -- ─────────────────────────────────────────────────────────────
--- TEST 11: advance-notice booking rule
+-- TEST 7: reserve_slot snapshots the booking-time truth
 -- ─────────────────────────────────────────────────────────────
 
 DO $$
 DECLARE
-    v_day date := public.get_setting_date('test.day');
-    v_day_far date := public.get_setting_date('test.day_far');
-    v_branch uuid := public.get_setting_uuid('test.branch');
-    v_svc uuid := public.get_setting_uuid('test.svc_advance');
-    v_count int;
-    v_count_far int;
+    v_patient    uuid := public.get_setting_uuid('test.p');
+    v_staff      uuid := public.get_setting_uuid('test.staff_p');
+    v_svc        uuid := public.get_setting_uuid('test.svc');
+    v_dxb        uuid := public.get_setting_uuid('test.dxb');
+    v_day        date  := public.get_setting_date('test.day');
+    v_start14    timestamptz := (v_day + TIME '14:00') AT TIME ZONE 'Asia/Dubai';
+    v_appt       public.appointments;
 BEGIN
-    SELECT count(*) INTO v_count
-      FROM public.get_availability(v_branch, v_svc, v_day, v_day, NULL::uuid[]);
-    PERFORM public.expect(v_count = 0, '7-day advance notice blocks this weeks slots');
+    v_appt := public.reserve_slot(v_dxb, v_svc, v_patient, v_start14, v_staff, 't7', 'web');
 
-    SELECT count(*) INTO v_count_far
-      FROM public.get_availability(v_branch, v_svc, v_day_far, v_day_far, NULL::uuid[]);
-    PERFORM public.expect(v_count_far > 0, 'slots reappear beyond the 7-day notice window');
+    PERFORM public.expect(v_appt.branch_id = v_dxb, 'appointment created at the requested branch');
+    PERFORM public.expect(v_appt.staff_id = v_staff AND v_appt.patient_id = v_patient, 'provider and patient recorded');
+    PERFORM public.expect(v_appt.status = 'Pending', 'default status is Pending');
+    PERFORM public.expect(v_appt.appointment_ref LIKE 'TPL-%', 'appointment_ref auto-generated (' || v_appt.appointment_ref || ')');
+    PERFORM public.expect(v_appt.client_number IS NOT NULL, 'client_number snapshot taken');
+    PERFORM public.expect(v_appt.service_name_snapshot = 'AV Test Service', 'service name snapshot taken');
+    PERFORM public.expect(v_appt.price_snapshot = 350.00, 'price snapshot from catalogue (350.00)');
+    PERFORM public.expect(v_appt.currency_snapshot = 'AED', 'currency snapshot is AED');
+    PERFORM public.expect(v_appt.buffer_minutes = 0, 'buffer snapshot 0 for AV Test Service');
+    PERFORM public.expect(v_appt.source_channel = 'web', 'source channel recorded as web');
+    PERFORM public.expect(
+        v_appt.scheduled_start = v_start14
+        AND v_appt.scheduled_end = v_start14 + interval '60 minutes',
+        'timeslot kept exactly as reserved'
+    );
+
+    DELETE FROM public.appointments WHERE id = v_appt.id;
 END;
 $$;
 
 -- ─────────────────────────────────────────────────────────────
--- Cleanup fixtures (reverse dependency order), keep schema
+-- TEST 8: authorization at the reservation boundary
 -- ─────────────────────────────────────────────────────────────
 
-DELETE FROM public.appointments         WHERE patient_id = public.get_setting_uuid('test.patient');
-DELETE FROM public.branch_closures      WHERE reason = 'test closure';
-DELETE FROM public.holidays             WHERE reason = 'test holiday';
-DELETE FROM public.staff_availability   WHERE staff_id IN (public.get_setting_uuid('test.staff'), public.get_setting_uuid('test.staff2'));
-DELETE FROM public.staff_branches       WHERE staff_id IN (public.get_setting_uuid('test.staff'), public.get_setting_uuid('test.staff2'));
-DELETE FROM public.service_branches     WHERE service_id IN (
-    SELECT id FROM public.services WHERE name IN (
-        'Availability Test Service', 'Availability Buffer Service', 'Availability Advance Service'
-    )
-);
-DELETE FROM public.services             WHERE name IN (
-    'Availability Test Service', 'Availability Buffer Service', 'Availability Advance Service'
-);
-DELETE FROM public.staff                WHERE profile_id IN (
-    SELECT id FROM public.profiles WHERE email LIKE 'avl.%@test.local'
-);
-DELETE FROM public.profiles             WHERE email LIKE 'avl.%@test.local';
-DELETE FROM auth.users                  WHERE email LIKE 'avl.%@test.local';
+DO $$
+DECLARE
+    v_patient  uuid := public.get_setting_uuid('test.p');
+    v_other    uuid := public.get_setting_uuid('test.a'); -- a different profile
+    v_staff    uuid := public.get_setting_uuid('test.staff_p');
+    v_svc      uuid := public.get_setting_uuid('test.svc');
+    v_dxb      uuid := public.get_setting_uuid('test.dxb');
+    v_day      date  := public.get_setting_date('test.day');
+BEGIN
+    -- A signed-in patient books their own slot — allowed.
+    PERFORM public.act_as(v_patient);
+    PERFORM public.reserve_slot(
+        v_dxb, v_svc, v_patient,
+        (v_day + TIME '15:00') AT TIME ZONE 'Asia/Dubai', v_staff, 't8a', 'web'
+    );
 
-DROP FUNCTION public.get_setting_uuid(text);
-DROP FUNCTION public.get_setting_date(text);
-DROP FUNCTION public.expect(boolean, text);
+    -- The same patient cannot book FOR another customer.
+    BEGIN
+        PERFORM public.reserve_slot(
+            v_dxb, v_svc, v_other,
+            (v_day + TIME '15:00') AT TIME ZONE 'Asia/Dubai', v_staff, 't8b', 'web'
+        );
+        PERFORM public.expect(false, 'patient booking another customer is rejected');
+    EXCEPTION WHEN OTHERS THEN
+        PERFORM public.expect(
+            SQLERRM = 'Cannot book an appointment for another customer',
+            'patient cannot book for another customer'
+        );
+    END;
 
-SELECT 'ALL AVAILABILITY ENGINE ACCEPTANCE TESTS PASSED' AS result;
+    -- An anonymous JWT can never book.
+    SET ROLE anon;
+    PERFORM set_config('request.jwt.claims', '{"role":"anon"}'::text, false);
+    BEGIN
+        PERFORM public.reserve_slot(
+            v_dxb, v_svc, v_patient,
+            (v_day + TIME '16:00') AT TIME ZONE 'Asia/Dubai', v_staff, 't8c', 'web'
+        );
+        PERFORM public.expect(false, 'anon booking is rejected');
+    EXCEPTION WHEN OTHERS THEN
+        PERFORM public.expect(
+            SQLERRM = 'Booking requires a signed-in customer or staff account',
+            'anon JWT rejected at reservation'
+        );
+    END;
+
+    PERFORM set_config('request.jwt.claims', '{}'::text, false);
+    RESET ROLE;
+
+    DELETE FROM public.appointments WHERE notes IN ('t8a', 't8b', 't8c');
+END;
+$$;
+
+-- ─────────────────────────────────────────────────────────────
+-- TEST 9: layout and branch-scope rejections
+-- ─────────────────────────────────────────────────────────────
+
+DO $$
+DECLARE
+    v_patient   uuid := public.get_setting_uuid('test.p');
+    v_staff_p   uuid := public.get_setting_uuid('test.staff_p');
+    v_staff_b   uuid := public.get_setting_uuid('test.staff_b');
+    v_svc       uuid := public.get_setting_uuid('test.svc');
+    v_buf       uuid := public.get_setting_uuid('test.buf');
+    v_dxb       uuid := public.get_setting_uuid('test.dxb');
+    v_auh       uuid := public.get_setting_uuid('test.auh');
+    v_day       date  := public.get_setting_date('test.day');
+    v_sunday    date  := v_day + ((7 - EXTRACT(DOW FROM v_day)::int + 7) % 7)::int;
+BEGIN
+    -- Buffer service is not available at Abu Dhabi.
+    BEGIN
+        PERFORM public.reserve_slot(
+            v_auh, v_buf, v_patient,
+            (v_day + TIME '10:00') AT TIME ZONE 'Asia/Dubai', v_staff_p, NULL, 'web'
+        );
+        PERFORM public.expect(false, 'buffer service unavailable at abu-dhabi');
+    EXCEPTION WHEN OTHERS THEN
+        PERFORM public.expect(
+            SQLERRM = 'Service is not available at this branch',
+            'service not available at this branch rejected'
+        );
+    END;
+
+    -- A provider is mandatory.
+    BEGIN
+        PERFORM public.reserve_slot(
+            v_dxb, v_svc, v_patient,
+            (v_day + TIME '10:00') AT TIME ZONE 'Asia/Dubai', NULL, NULL, 'web'
+        );
+        PERFORM public.expect(false, 'NULL provider is rejected');
+    EXCEPTION WHEN OTHERS THEN
+        PERFORM public.expect(
+            SQLERRM = 'This service requires a selected provider',
+            'service requires a selected provider enforced'
+        );
+    END;
+
+    -- Provider B does not work at Abu Dhabi.
+    BEGIN
+        PERFORM public.reserve_slot(
+            v_auh, v_svc, v_patient,
+            (v_day + TIME '10:00') AT TIME ZONE 'Asia/Dubai', v_staff_b, NULL, 'web'
+        );
+        PERFORM public.expect(false, 'provider not assigned to branch is rejected');
+    EXCEPTION WHEN OTHERS THEN
+        PERFORM public.expect(
+            SQLERRM = 'Selected provider does not work at this branch',
+            'provider must work at the branch'
+        );
+    END;
+
+    -- Outside branch opening hours (21:00 end lands at 22:00 > 20:00).
+    BEGIN
+        PERFORM public.reserve_slot(
+            v_dxb, v_svc, v_patient,
+            (v_day + TIME '21:00') AT TIME ZONE 'Asia/Dubai', v_staff_p, NULL, 'web'
+        );
+        PERFORM public.expect(false, '21:00 booking is rejected');
+    EXCEPTION WHEN OTHERS THEN
+        PERFORM public.expect(
+            SQLERRM = 'This timeslot is outside the branch opening hours',
+            'outside branch hours rejected'
+        );
+    END;
+
+    -- Off-grid start (10:15 is not on the 30-minute grid).
+    BEGIN
+        PERFORM public.reserve_slot(
+            v_dxb, v_svc, v_patient,
+            (v_day + TIME '10:15') AT TIME ZONE 'Asia/Dubai', v_staff_p, NULL, 'web'
+        );
+        PERFORM public.expect(false, 'off-grid 10:15 is rejected');
+    EXCEPTION WHEN OTHERS THEN
+        PERFORM public.expect(
+            SQLERRM = 'This timeslot is not aligned to the booking grid',
+            'off-grid timestamps rejected'
+        );
+    END;
+
+    -- Sunday: the branch is closed.
+    BEGIN
+        PERFORM public.reserve_slot(
+            v_dxb, v_svc, v_patient,
+            (v_sunday + TIME '10:00') AT TIME ZONE 'Asia/Dubai', v_staff_p, NULL, 'web'
+        );
+        PERFORM public.expect(false, 'Sunday booking is rejected');
+    EXCEPTION WHEN OTHERS THEN
+        PERFORM public.expect(
+            SQLERRM = 'The branch is closed on this day',
+            'closed-day booking rejected'
+        );
+    END;
+END;
+$$;
+
+-- ─────────────────────────────────────────────────────────────
+-- CLEANUP
+-- ─────────────────────────────────────────────────────────────
+
+DELETE FROM public.appointments WHERE notes IN
+    ('t4', 't4b', 't5', 't5b', 't5c', 't5d', 't6', 't6b', 't6c', 't7', 't8a', 't8b', 't8c');
+
+DELETE FROM public.blocked_periods WHERE reason = 'AV test leave';
+DELETE FROM public.holidays        WHERE reason = 'AV test holiday';
+DELETE FROM public.branch_closures WHERE reason = 'AV test closure';
+
+DELETE FROM public.service_branches
+ WHERE service_id IN (SELECT id FROM public.services WHERE name LIKE 'AV %');
+DELETE FROM public.staff_availability
+ WHERE staff_id IN (SELECT id FROM public.staff WHERE profile_id IN
+   (SELECT id FROM public.profiles WHERE email LIKE 'av.%@test.local'));
+DELETE FROM public.staff_branches
+ WHERE staff_id IN (SELECT id FROM public.staff WHERE profile_id IN
+   (SELECT id FROM public.profiles WHERE email LIKE 'av.%@test.local'));
+DELETE FROM public.staff
+ WHERE profile_id IN (SELECT id FROM public.profiles WHERE email LIKE 'av.%@test.local');
+DELETE FROM public.services WHERE name IN ('AV Test Service', 'AV Buffer Service');
+DELETE FROM public.profiles WHERE email LIKE 'av.%@test.local';
+DELETE FROM auth.users WHERE email LIKE 'av.%@test.local';
+
+DO $$
+BEGIN
+    RAISE NOTICE 'T12 availability engine acceptance tests complete';
+END;
+$$;
