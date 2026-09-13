@@ -11,6 +11,7 @@ Supabase schema source of truth for The Perfect Look (MVP, task T3).
 | `migrations/005_seed_demo_branches.sql` | T37 idempotent seed + backfill — demo Dubai/Abu Dhabi branches, hours, staff assignments, branch access, service availability, client numbers, appointment snapshots |
 | `migrations/006_availability_engine.sql` | T12 branch-aware availability engine — branch capacity, per-appointment buffer snapshot, DB EXCLUDE overlap boundary, `get_availability()`, atomic `reserve_slot()` |
 | `migrations/007_branch_providers.sql` | T13 provider list for the availability picker — `get_branch_providers()` (active staff assigned to a branch, primary first) |
+| `migrations/008_appointment_booking_api.sql` | T14 booking-API completion — `appointments.payment_status` (booking-time payment state; T38 owns the full payment domain). The booking API itself is T12's atomic `reserve_slot()` |
 | `schema.sql`                     | Consolidated snapshot of the final schema (kept in sync)      |
 | `seed.sql`                       | Idempotent admin-account seed (call `seed_admin()` with your credentials) |
 | `tests/rls_appointments.sql`     | RLS acceptance test (patient isolation, RBAC, SRS §10 enum)   |
@@ -22,6 +23,7 @@ Supabase schema source of truth for The Perfect Look (MVP, task T3).
 | `tests/availability_engine_parallel_worker.sql` | T12 parallel-slot proof worker (one concurrent `reserve_slot()` attempt, one result row) |
 | `tests/availability_engine_parallel.ps1` | T12 parallel-slot proof driver (Windows) — N concurrent workers, asserts exactly one success |
 | `tests/availability_engine_parallel.sh` | T12 parallel-slot proof driver (POSIX) — same proof as the `.ps1` |
+| `tests/appointment_booking_api.sql` | T14 booking-API acceptance test (full confirmation contract — appointment ID, client number, branch, service, time, payment status; double-booking impossible; inactive/not-offered services rejected; provider/slot rejections; identity auth gate; booking-time price snapshot) |
 
 ## What the schema contains
 
@@ -104,6 +106,24 @@ exact same slot, then asserts `availability_parallel_results` has exactly
 one `success` among N attempts (advisory-locked re-check + DB overlap
 boundary). Fixtures and the results table are created and torn down by
 `availability_engine_parallel_setup.sql` automatically.
+
+## Running the booking-API acceptance test (T14)
+
+Requires migrations 001–008 applied (`supabase db reset`), then:
+
+```bash
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/appointment_booking_api.sql
+```
+
+It asserts the T14 booking contract built on T12's `reserve_slot()`:
+the confirmation returns appointment ID, `appointment_ref`, client
+number, branch, service and time plus `payment_status` (defaults to
+`unpaid`, CHECK-enforced); a booked/overlapping slot is rejected and
+never re-offered (double-booking impossible); inactive and not-offered
+services are rejected; provider/slot layout rejections (required
+provider, off-grid, closed day, past time); the identity auth gate
+(book-own-only, no anon); and booking-time price snapshots stay
+immutable when the catalogue later changes.
 
 > Only the Supabase URL + **anon** key ever reach the browser. The
 > service-role key is used exclusively by `tools/` (T25) and CI.

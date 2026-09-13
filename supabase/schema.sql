@@ -563,3 +563,24 @@ CREATE POLICY app_settings_update_admin
 CREATE POLICY app_settings_delete_admin
     ON public.app_settings FOR DELETE
     USING (public.is_admin());
+
+-- ─────────────────────────────────────────────────────────────
+-- T14 — appointment booking API (migration 008)
+-- The transactional booking function is public.reserve_slot()
+-- (T12, migration 006). This snapshot adds the booking-time payment
+-- state the T14 confirmation contract reports.
+-- ─────────────────────────────────────────────────────────────
+
+ALTER TABLE public.appointments
+    ADD COLUMN IF NOT EXISTS payment_status text
+        NOT NULL DEFAULT 'unpaid'
+        CHECK (payment_status IN (
+            'unpaid',
+            'pay_at_clinic',
+            'partially_paid',
+            'paid',
+            'refunded'
+        ));
+
+COMMENT ON COLUMN public.appointments.payment_status IS
+    'Booking-time payment state (T14). Confirmation reports this; T38 introduces the full payment domain (invoices, provider transitions).';
