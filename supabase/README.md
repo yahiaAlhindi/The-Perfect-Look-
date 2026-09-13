@@ -9,12 +9,14 @@ Supabase schema source of truth for The Perfect Look (MVP, task T3).
 | `migrations/003_seed_data.sql`   | T4 idempotent seed — services (SRS §8), demo staff + availability, `app_settings`, holidays |
 | `migrations/004_branches_client_number_pricing.sql` | T37 schema extension — branches, branch hours/closures, staff-branch assignments, branch_access (branch-scoped RLS), service-branch availability/pricing, packages/add-ons, client number, appointment branch + price snapshots, migration mappings |
 | `migrations/005_seed_demo_branches.sql` | T37 idempotent seed + backfill — demo Dubai/Abu Dhabi branches, hours, staff assignments, branch access, service availability, client numbers, appointment snapshots |
+| `migrations/006_availability_engine.sql` | T12 branch-aware availability engine — `get_branch_providers()`, `is_staff_free()`, `get_availability()` (branch hours/closures, holidays, duration/buffers, provider schedules, blocks, appointments at any branch, Asia/Dubai time, booking window/notice) |
 | `schema.sql`                     | Consolidated snapshot of the final schema (kept in sync)      |
 | `seed.sql`                       | Idempotent admin-account seed (call `seed_admin()` with your credentials) |
 | `tests/rls_appointments.sql`     | RLS acceptance test (patient isolation, RBAC, SRS §10 enum)   |
 | `tests/seed_data.sql`            | T4 seed acceptance test (services, settings, staff, holidays) |
 | `tests/services_api.sql`         | T9 services API test (active-only reads, admin-only writes, instant patient reflection) |
 | `tests/multi_branch_pricing_schema.sql` | T37 acceptance test (branches seed idempotently, client-number uniqueness/immutability/search, branch-scoped RLS, price snapshots, packages, migration mappings) |
+| `tests/availability_engine.sql`  | T12 acceptance test (slot grid in Asia/Dubai, holiday/closure days, provider filter, booking + buffer blocks, cross-branch single-book, unique-index concurrency, past dates, advance notice) |
 
 ## What the schema contains
 

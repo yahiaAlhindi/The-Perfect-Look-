@@ -344,6 +344,38 @@ export interface ClientSearchResult {
   mobile_number: string
 }
 
+// ── T12: availability engine ─────────────────────────────────
+
+/**
+ * Provider (staff) summary returned by `get_branch_providers`
+ * (T12 migration 006) — drives the optional provider step of the
+ * availability picker.
+ */
+export interface ProviderSummary {
+  id: string
+  full_name: string
+  title: string | null
+  specializations: string[] | null
+  active: boolean
+  primary_branch: boolean
+}
+
+/**
+ * A bookable slot returned by `get_availability` (T12 migration 006).
+ * `booking_date` is the branch-local date (Asia/Dubai for the demo
+ * branches); `staff_ids`/`staff_names` are the providers who are
+ * free in that slot (empty never happens — slots without a provider
+ * are omitted entirely).
+ */
+export interface AvailabilitySlot {
+  booking_date: string
+  /** ISO 8601 instant — convert with the branch timezone to display. */
+  slot_start: string
+  slot_end: string
+  staff_ids: string[]
+  staff_names: string[]
+}
+
 /**
  * Database type bag for createClient<Database>().
  * Only the tables/functions the MVP uses are modelised here; omitted
@@ -396,6 +428,20 @@ export interface Database {
       search_clients: {
         Args: { p_query: string }
         Returns: Array<ClientSearchResult>
+      }
+      get_branch_providers: {
+        Args: { p_branch_id: string }
+        Returns: Array<ProviderSummary>
+      }
+      get_availability: {
+        Args: {
+          p_branch_id: string
+          p_service_id: string
+          p_start_date: string
+          p_end_date: string
+          p_staff_ids?: string[] | null
+        }
+        Returns: Array<AvailabilitySlot>
       }
     }
     Enums: {

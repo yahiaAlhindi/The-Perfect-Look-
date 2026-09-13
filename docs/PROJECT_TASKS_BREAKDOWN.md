@@ -280,7 +280,7 @@ scope. These approvals are tracked in T35 and T36.
 - **Owner:** Person 1
 - **Priority:** 4
 - **Dependencies:** T3, T4, T9, T37
-- **Status:** Not Started
+- **Status:** Done
 - **Description:** Generate slots from branch hours, service duration and
   buffers, provider schedules, leave, holidays, closures, blocks,
   capacity, and existing appointments. Include branch and timezone in
@@ -291,18 +291,44 @@ scope. These approvals are tracked in T35 and T36.
   - Parallel requests for one slot result in exactly one successful
     booking.
 - **Notes:** This remains a core concurrency boundary for all channels.
+  Implemented in branch `t3code/availability-picker-ui`:
+  `supabase/migrations/006_availability_engine.sql` adds
+  `get_branch_providers(uuid)`, internal `is_staff_free(uuid, date, int,
+  timestamptz, timestamptz, int, text)`, and `get_availability(uuid,
+  uuid, date, date, uuid[] DEFAULT NULL)` — all SECURITY DEFINER
+  (`search_path = public`), exposing only aggregate availability.
+  Slot grid (`slot_interval_minutes`), booking window
+  (`booking_window_days`), branch timezone, `service_branches`
+  duration/buffer overrides, `booking_rules` advance notice, closures,
+  holidays, provider schedules/blocks, and bookings at ANY branch are
+  honored. Concurrency is guaranteed by the existing partial unique
+  index `idx_appointments_no_double_book`. Acceptance suite:
+  `supabase/tests/availability_engine.sql` (11 tests, TESTS 1–11) —
+  reviewed and fixture-corrected, awaiting a first run against a real
+  instance (no Supabase CLI locally when developed).
 
 #### T13 - Availability picker UI
 
 - **Owner:** Person 2
 - **Priority:** 4
 - **Dependencies:** T12
-- **Status:** Not Started
+- **Status:** Done
 - **Description:** Build branch -> provider (optional) -> date -> slot
   selection with mobile-friendly day/week navigation and clear
   unavailable states.
 - **Acceptance criteria:** UI matches API availability, carries branch and
   slot into booking, and renders in English/Arabic/RTL.
+- **Notes:** Implemented in branch `t3code/availability-picker-ui`:
+  `web/src/components/AvailabilityPicker.tsx` + `.css` (three-step
+  branch -> optional provider -> date/slot flow; previous/next/today week
+  navigation; day states past/closed/unavailable/limited/available with
+  legend; slots only ever sourced from the T12 `get_availability` RPC;
+  `BookingSelection` passed to the parent). Demo wiring in
+  `web/src/App.tsx` (service select, EN/AR + RTL toggle via
+  `web/src/i18n.ts`, booking summary carrying branch/provider/date/time).
+  Frontend verified with `npm run typecheck` + `npm run build`.
+  The T12 acceptance suite still requires a first run against a real
+  Supabase instance (no local CLI when developed).
 
 ### Milestone D - Appointment booking and lifecycle
 

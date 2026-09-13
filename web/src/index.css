@@ -20,8 +20,116 @@ body {
 }
 
 .app-shell {
-  max-width: 40rem;
+  max-width: 46rem;
   margin: 0 auto;
-  padding: 2rem 1rem;
-  text-align: center;
+  padding: 1.5rem 1rem 3rem;
+}
+
+.app-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-block-end: 1.25rem;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.app-tagline {
+  margin: 0.2rem 0 0;
+  color: #6b6b74;
+  font-size: 0.9rem;
+}
+
+.lang-toggle {
+  border: 1px solid #e3e3e7;
+  border-radius: 10px;
+  background: #f7f7f8;
+  color: #1a1a1a;
+  padding: 0.5rem 0.85rem;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lang-toggle:hover {
+  border-color: #2f6fed;
+  color: #2f6fed;
+}
+
+.booking-step {
+  margin-block-end: 1rem;
+}
+
+.service-label {
+  display: block;
+  margin-block-end: 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.service-select {
+  width: 100%;
+  max-width: 24rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid #e3e3e7;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #1a1a1a;
+  font: inherit;
+}
+
+.app-hint {
+  margin: 0.35rem 0 0;
+  color: #6b6b74;
+  font-size: 0.85rem;
+}
+
+.summary-card {
+  margin-block-start: 1.5rem;
+  padding: 1.25rem;
+  border: 1px solid #e3e3e7;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fbfbfc, #f7f7f8);
+}
+
+.summary-card h2 {
+  margin: 0 0 0.85rem;
+  font-size: 1.05rem;
+}
+
+.summary-list {
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  .summary-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.summary-list > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.summary-list dt {
+  color: #6b6b74;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.summary-list dd {
+  margin: 0;
+  font-weight: 500;
 }
