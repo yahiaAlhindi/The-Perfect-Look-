@@ -380,6 +380,7 @@ async function writeAuditLog(
   const { error } = await supabase
     .from('audit_logs')
     .insert({
+      admin_user_id: (await supabase.auth.getUser()).data.user?.id ?? null,
       action,
       entity: 'service',
       entity_id: entityId,

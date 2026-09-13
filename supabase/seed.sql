@@ -35,6 +35,12 @@ BEGIN
         RETURN v_existing_id;
     END IF;
 
+    -- T18: public sign-ups never self-assign roles (handle_new_user
+    -- ignores metadata role unless app.rbac_role_change_authorized is
+    -- set). Bootstrap accounts are the sanctioned pathway, so enable
+    -- it for the insert and clear it afterwards.
+    PERFORM set_config('app.rbac_role_change_authorized', 'true', false);
+
     INSERT INTO auth.users (
         instance_id, id, aud, role, email,
         encrypted_password, email_confirmed_at,
@@ -50,7 +56,7 @@ BEGIN
         now(),
         '{"provider":"email","providers":["email"]}',
         jsonb_build_object(
-            'role', 'admin',
+            'role', 'administrator',
             'full_name', 'The Perfect Look Admin',
             'mobile_number', ''
         ),
@@ -58,6 +64,8 @@ BEGIN
         now()
     )
     ON CONFLICT (email) DO NOTHING;
+
+    PERFORM set_config('app.rbac_role_change_authorized', 'false', false);
 
     -- GoTrue identities (needed for password sign-in on current
     -- Supabase). Tolerates a schema without auth.identities.

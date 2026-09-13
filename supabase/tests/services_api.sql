@@ -65,6 +65,10 @@ $$;
 -- FIXTURES (as table owner — RLS bypassed)
 -- ─────────────────────────────────────────────────────────────
 
+-- T18: handle_new_user() only honours a metadata role while this
+-- session flag is set — enables the fixture roles below.
+SELECT set_config('app.rbac_role_change_authorized', 'true', false);
+
 INSERT INTO auth.users (
     instance_id, id, aud, role, email, encrypted_password,
     email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
@@ -77,9 +81,9 @@ SELECT '00000000-0000-0000-0000-000000000000', gen_random_uuid(),
        jsonb_build_object('role', r, 'full_name', fn, 'mobile_number', mn),
        now(), now()
 FROM (VALUES
-    ('svc.patient@test.local', 'patient', 'Svc Patient', '+971500000101'),
-    ('svc.staff@test.local',   'staff',   'Svc Staff',   '+971500000102'),
-    ('svc.admin@test.local',   'admin',   'Svc Admin',   '+971500000103')
+    ('svc.patient@test.local', 'customer', 'Svc Patient', '+971500000101'),
+    ('svc.staff@test.local',   'provider', 'Svc Staff',   '+971500000102'),
+    ('svc.admin@test.local',   'administrator', 'Svc Admin',   '+971500000103')
 ) AS v(email, r, fn, mn);
 
 PERFORM set_config('test.p', (SELECT id::text FROM public.profiles WHERE email = 'svc.patient@test.local'), false);

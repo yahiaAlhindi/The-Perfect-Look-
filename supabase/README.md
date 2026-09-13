@@ -1,6 +1,6 @@
 # supabase/
 
-Supabase schema source of truth for The Perfect Look (MVP, task T3).
+Supabase schema source of truth for The Perfect Look (MVP, tasks T3/T5/T12/T18/T37).
 
 | File                             | Purpose                                                        |
 | -------------------------------- | -------------------------------------------------------------- |
@@ -12,10 +12,11 @@ Supabase schema source of truth for The Perfect Look (MVP, task T3).
 | `migrations/006_availability_engine.sql` | T12 branch-aware availability engine — branch capacity, per-appointment buffer snapshot, DB EXCLUDE overlap boundary, `get_availability()`, atomic `reserve_slot()` |
 | `migrations/007_branch_providers.sql` | T13 provider list for the availability picker — `get_branch_providers()` (active staff assigned to a branch, primary first) |
 | `migrations/008_appointment_booking_api.sql` | T14 booking-API completion — `appointments.payment_status` (booking-time payment state; T38 owns the full payment domain). The booking API itself is T12's atomic `reserve_slot()` |
+| `migrations/009_roles_rbac.sql`   | T18 roles/RBAC — 8-role model (SRS §3), invitation flow (SRS §27), branch-scoped helpers, role-change guard, audit hardening |
 | `schema.sql`                     | Consolidated snapshot of the final schema (kept in sync)      |
 | `seed.sql`                       | Idempotent admin-account seed (call `seed_admin()` with your credentials) |
-| `tests/rls_appointments.sql`     | RLS acceptance test (patient isolation, RBAC, SRS §10 enum)   |
-| `tests/seed_data.sql`            | T4 seed acceptance test (services, settings, staff, holidays) |
+| `tests/rls_appointments.sql`     | RLS acceptance test (patient isolation, branch-scoped RBAC, SRS §10 enum) |
+| `tests/seed_data.sql`            | T4 seed acceptance test (services, settings, staff, holidays) + T37/T18 seed assertions |
 | `tests/services_api.sql`         | T9 services API test (active-only reads, admin-only writes, instant patient reflection) |
 | `tests/multi_branch_pricing_schema.sql` | T37 acceptance test (branches seed idempotently, client-number uniqueness/immutability/search, branch-scoped RLS, price snapshots, packages, migration mappings) |
 | `tests/availability_engine.sql`  | T12 acceptance test (branch hours + Asia/Dubai slots, holidays/closures, leave blocks, buffer/existing-appointment conflicts, cross-branch no-double-book, capacity, snapshots, authorization, layout rejections) |
@@ -24,21 +25,45 @@ Supabase schema source of truth for The Perfect Look (MVP, task T3).
 | `tests/availability_engine_parallel.ps1` | T12 parallel-slot proof driver (Windows) — N concurrent workers, asserts exactly one success |
 | `tests/availability_engine_parallel.sh` | T12 parallel-slot proof driver (POSIX) — same proof as the `.ps1` |
 | `tests/appointment_booking_api.sql` | T14 booking-API acceptance test (full confirmation contract — appointment ID, client number, branch, service, time, payment status; double-booking impossible; inactive/not-offered services rejected; provider/slot rejections; identity auth gate; booking-time price snapshot) |
+| `tests/rbac_invitations.sql`     | T18 acceptance test — no self-escalation, invitation flow, branch-scoped RBAC, role gates, audit trail |
 
 ## What the schema contains
 
 - `profiles` (synced from `auth.users` via trigger), `services`,
   `staff`, `staff_availability`, `blocked_periods`, `holidays`,
   `appointments` (with human-readable `appointment_ref` like
-  `TPL-20260912-0001`), `notifications`, `audit_logs`, `app_settings`.
-- Enums: `appointment_status` (SRS §10), `user_role`, `notification_channel`
-  (SRS §15), `notification_status`.
+  `TPL-20260912-0001`), `notifications`, `audit_logs`, `app_settings`,
+  `staff_invitations`, plus the T37 branch tables (`branches`,
+  `branch_hours`, `branch_closures`, `staff_branches`, `branch_access`,
+  `service_branches`, `package_items`, `service_addons`,
+  `migration_mappings`).
+- Enums: `appointment_status` (SRS §10), `user_role` (8 roles per
+  SRS §3: customer, receptionist, branch_manager, provider, nutritionist,
+  finance, administrator, super_admin), `notification_channel` (SRS §15),
+  `notification_status`, `service_type`, `branch_access_role`.
 - Foreign keys use `ON DELETE RESTRICT`. Unique indexes: email, mobile,
   `appointment_ref`, and a partial unique index that makes double booking
   of the same staff/time impossible at the DB level.
-- Row Level Security enabled on every table. Patients see/own only their
-  own rows; staff see all appointments; admins have full access
-  (SRS §17). Self role-escalation is blocked by a trigger.
+- Row Level Security enabled on every table. Customers see/own only their
+  own rows (SRS §17); staff access is **branch-scoped** (T37
+  `branch_access` + `can_access_branch()`); admins have full access.
+  Self role-escalation is blocked by a trigger, and public sign-ups can
+  never self-assign a role (T18).
+
+## Roles & invitations (T18)
+
+- Roles are stored on `profiles.role` and enforced by RLS policies plus
+  SECURITY DEFINER helpers (`is_admin()`, `is_staff_or_admin()`,
+  `is_super_admin()`, `current_role()`, `can_access_branch()`,
+  `can_manage_branch()`, `can_access_payments()`, `can_access_nutrition()`).
+- Staff are created through **invitations** (SRS §27): an admin or branch
+  manager calls `invite_staff()`, the invitee signs up normally and
+  accepts via `accept_invitation(code)`, which provisions the role, the
+  `staff` row, `staff_branches` assignment and the `branch_access` grant.
+- A session flag (`app.rbac_role_change_authorized`) gates the
+  `handle_new_user` / `prevent_self_role_change` triggers so role changes
+  only happen through sanctioned pathways (invitation acceptance, admin
+  role assignment); test fixtures set the flag to reproduce those paths.
 
 ## Applying locally / to the online project
 
@@ -73,9 +98,25 @@ psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/rls_appointments.sq
 ```
 
 It asserts: patients can only read their own appointments, can't
-insert/update another patient's appointment, staff/admin see all, and the
-`appointment_status` enum matches SRS §10. It can also be pasted into the
-online SQL editor.
+insert/update another patient's appointment, staff access is scoped to
+their granted branch (Dubai receptionist never sees Abu Dhabi records),
+admins see all, and the `appointment_status` enum matches SRS §10. It can
+also be pasted into the online SQL editor.
+
+## Running the T18 acceptance test
+
+Requires migrations 001–009 applied (`supabase db reset`), then:
+
+```bash
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/rbac_invitations.sql
+```
+
+It asserts: public sign-ups always become `customer` (metadata roles are
+never trusted), role changes are blocked outside sanctioned pathways, the
+full invitation lifecycle (invite → signup → accept) provisions role +
+staff + branch assignments, branch-scoped RBAC isolation, role module gates
+(payments / nutrition / super_admin grants), and the audit trail
+visibility rules.
 
 ## Running the availability-engine acceptance test (T12)
 

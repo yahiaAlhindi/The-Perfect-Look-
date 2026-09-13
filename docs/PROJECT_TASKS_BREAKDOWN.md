@@ -420,13 +420,40 @@ scope. These approvals are tracked in T35 and T36.
 - **Owner:** Person 1
 - **Priority:** 4
 - **Dependencies:** T3, T5, T37
-- **Status:** Not Started
+- **Status:** In Progress
 - **Description:** Add customer, receptionist, branch manager, provider,
   nutritionist, finance, administrator, and super-administrator roles.
   Enforce branch scope in claims/RLS/API and protect health/payment data.
 - **Acceptance criteria:** A customer receives 403 for staff APIs; a branch
   user cannot read another branch's records; finance can see payments
   without unnecessary nutrition data; admin access is auditable.
+- **Progress:**
+  - `supabase/migrations/009_roles_rbac.sql` — 8-role `user_role` enum
+    (legacy `patient/staff/admin` mapped to customer/provider/administrator,
+    Lina the nutritionist auto-mapped by title), role helper functions
+    (`is_admin`, `is_staff_or_admin`, `is_super_admin`, `current_role`,
+    `current_staff_id`, `is_*` role predicates, `can_access_branch`,
+    `can_manage_branch`, `can_access_payments`, `can_access_nutrition`),
+    re-hardened `handle_new_user`/`prevent_self_role_change` behind the
+    `app.rbac_role_change_authorized` session flag, `staff_invitations`
+    table (open-email expiry, unique active-email partial index) + RPCs
+    `invite_staff`/`list_invitations`/`revoke_invitation`/
+    `accept_invitation`/`admin_set_user_role` (SECURITY DEFINER, minimal
+    grants), `log_audit` + admin-only `audit_logs` insert/select policies.
+  - Branch scope rides T37 `branch_access` + `can_access_branch()`; RLS is
+    untouched except `audit_logs` — all other tables inherit the redefined
+    helpers, so no policy diff churn across `profiles`/`services`/`staff`/
+    `appointments`.
+  - Acceptance tests: `supabase/tests/rbac_invitations.sql` (no
+    self-escalation, invitation lifecycle, branch isolation, module gates,
+    audit visibility) + `supabase/tests/rls_appointments.sql` extended for
+    branch-scoped staff reads.
+  - Frontend: `web/src/lib/supabase/types.ts` (8-role `UserRole`,
+    `StaffInvitation`, `InviteableRole`, new RPC signatures in the
+    `Database` bag), `web/src/lib/supabase/rbac.ts` (role helpers +
+    invitation lifecycle with validation), `errors.ts` 42501→FORBIDDEN,
+    `services.ts` audit writes now carry `admin_user_id`.
+  - Pending: P2/P3 team-management UI (screens behind `rbac.ts`).
 
 #### T19 - Staff dashboard UI
 
