@@ -302,7 +302,7 @@ scope. These approvals are tracked in T35 and T36.
       insert at a second branch rejected by the T3 unique index.
   - Parallel requests for one slot result in exactly one successful
     booking.
-    - Verified by `supabase/tests/availability_engine_parallel_worker.sql`
+- Verified by `supabase/tests/availability_engine_parallel_worker.sql`
       spawned by `.ps1` / `.sh` drivers: N concurrent `reserve_slot()`
       calls for one slot -> exactly one 'success' in
       `availability_parallel_results`; DB EXCLUDE constraint and
@@ -333,12 +333,23 @@ scope. These approvals are tracked in T35 and T36.
 - **Owner:** Person 2
 - **Priority:** 4
 - **Dependencies:** T12
-- **Status:** Not Started
+- **Status:** Done
 - **Description:** Build branch -> provider (optional) -> date -> slot
   selection with mobile-friendly day/week navigation and clear
   unavailable states.
 - **Acceptance criteria:** UI matches API availability, carries branch and
   slot into booking, and renders in English/Arabic/RTL.
+- **Notes:** Implemented in branch `t3code/availability-picker-ui`:
+  `web/src/components/AvailabilityPicker.tsx` + `.css` (three-step
+  branch -> optional provider -> date/slot flow; previous/next/today week
+  navigation; day states past/closed/unavailable/limited/available with
+  legend; slots only ever sourced from the T12 `get_availability` RPC;
+  `BookingSelection` passed to the parent). `supabase/migrations/
+  007_branch_providers.sql` adds the `get_branch_providers()` RPC
+  (migration 006 from PR #10 had no provider-list function). Demo wiring
+  in `web/src/App.tsx` (service select, EN/AR + RTL toggle via
+  `web/src/i18n.ts`, booking summary carrying branch/provider/date/time).
+  Frontend verified with `npm run typecheck` + `npm run build`.
 
 ### Milestone D - Appointment booking and lifecycle
 

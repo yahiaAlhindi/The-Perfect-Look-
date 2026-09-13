@@ -1,8 +1,14 @@
 /**
- * Availability engine API client module (T12).
- * Thin, typed wrappers over the DB functions built in migration 006:
- *   - getAvailability  -> public.get_availability(...)
- *   - reserveSlot      -> public.reserve_slot(...)
+ * Availability engine API client module (T12 + T13).
+ *
+ * Thin, typed wrappers over the DB functions built in migrations 006
+ * and 007:
+ *   - getAvailability     -> public.get_availability(...)
+ *   - reserveSlot         -> public.reserve_slot(...)
+ *   - listBranchProviders -> public.get_branch_providers(...)
+ * plus the public branch tables the picker needs for its day/week
+ * navigation (branches, branch_hours, branch_closures, holidays —
+ * all behind public SELECT RLS).
  *
  * The engine does ALL availability math server-side, branch-aware in
  * the branch timezone (Asia/Dubai), so these calls are authoritative
@@ -15,8 +21,16 @@
  */
 
 import { supabase } from './client'
-import type { AvailabilitySlot, ReservedAppointment } from './types'
-import { mapError, type MappedError } from './errors'
+import type {
+  AvailabilitySlot,
+  Branch,
+  BranchClosure,
+  BranchHours,
+  Holiday,
+  ProviderSummary,
+  ReservedAppointment,
+} from './types'
+import { mapError, mapped, type MappedError } from './errors'
 
 // ── public result shapes ──────────────────────────────────────
 
@@ -48,6 +62,29 @@ export interface ReserveSlotParams {
 
 export interface ReserveSlotResult {
   appointment: ReservedAppointment | null
+  error: MappedError | null
+}
+
+// ── picker result shapes (T13) ────────────────────────────────
+
+export interface BranchListResult {
+  branches: Branch[]
+  error: MappedError | null
+}
+
+export interface ProviderListResult {
+  providers: ProviderSummary[]
+  error: MappedError | null
+}
+
+export interface HoursListResult {
+  hours: BranchHours[]
+  error: MappedError | null
+}
+
+export interface ClosedDatesResult {
+  closures: BranchClosure[]
+  holidays: Holiday[]
   error: MappedError | null
 }
 
@@ -199,6 +236,85 @@ export async function reserveSlot(
   }
 
   return { appointment: (data as ReservedAppointment) ?? null, error: null }
+}
+
+/**
+ * Active branches in clinic sort order. Used by the picker's branch
+ * step (T13); drives the whole branch -> provider -> slot flow.
+ */
+export async function listBranches(): Promise<BranchListResult> {
+  const { data, error } = await supabase
+    .from('branches')
+    .select('*')
+    .eq('active', true)
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true })
+
+  if (error) return { branches: [], error: mapped('AVAILABILITY_BRANCHES', error.message) }
+  return { branches: (data ?? []) as Branch[], error: null }
+}
+
+/**
+ * Providers assigned to a branch (migration 007
+ * `get_branch_providers`) — the optional provider step of the picker.
+ */
+export async function listBranchProviders(branchId: string): Promise<ProviderListResult> {
+  const { data, error } = await supabase.rpc('get_branch_providers', {
+    p_branch_id: branchId,
+  })
+
+  if (error) return { providers: [], error: mapped('AVAILABILITY_PROVIDERS', error.message) }
+  return { providers: (data ?? []) as ProviderSummary[], error: null }
+}
+
+/** Weekly open days for a branch (a missing day means the branch is closed). */
+export async function listBranchHours(branchId: string): Promise<HoursListResult> {
+  const { data, error } = await supabase
+    .from('branch_hours')
+    .select('*')
+    .eq('branch_id', branchId)
+
+  if (error) return { hours: [], error: mapped('AVAILABILITY_HOURS', error.message) }
+  return { hours: (data ?? []) as BranchHours[], error: null }
+}
+
+/** Branch closures + clinic-wide holidays within a date range. */
+export async function listClosedDates(
+  branchId: string,
+  from: string,
+  to: string,
+): Promise<ClosedDatesResult> {
+  const closuresQuery = supabase
+    .from('branch_closures')
+    .select('*')
+    .eq('branch_id', branchId)
+    .gte('date', from)
+    .lte('date', to)
+
+  const holidaysQuery = supabase
+    .from('holidays')
+    .select('*')
+    .gte('date', from)
+    .lte('date', to)
+
+  const [closuresRes, holidaysRes] = await Promise.all([closuresQuery, holidaysQuery])
+
+  if (closuresRes.error || holidaysRes.error) {
+    return {
+      closures: [],
+      holidays: [],
+      error: mapped(
+        'AVAILABILITY_CLOSED',
+        (closuresRes.error ?? holidaysRes.error ?? {}).message ?? 'Failed to load closed dates',
+      ),
+    }
+  }
+
+  return {
+    closures: (closuresRes.data ?? []) as BranchClosure[],
+    holidays: (holidaysRes.data ?? []) as Holiday[],
+    error: null,
+  }
 }
 
 export type { MappedError } from './errors'

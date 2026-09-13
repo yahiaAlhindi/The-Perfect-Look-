@@ -377,6 +377,20 @@ export interface AvailabilitySlot {
 export type ReservedAppointment = Appointment
 
 /**
+ * Provider (staff) summary returned by `get_branch_providers`
+ * (T13 migration 007) — drives the optional provider step of the
+ * availability picker.
+ */
+export interface ProviderSummary {
+  id: string
+  full_name: string
+  title: string | null
+  specializations: string[] | null
+  active: boolean
+  primary_branch: boolean
+}
+
+/**
  * Database type bag for createClient<Database>().
  * Only the tables/functions the MVP uses are modelised here; omitted
  * tables fall back to the untyped Postgrest client at the call site.
@@ -438,6 +452,10 @@ export interface Database {
           p_staff_id?: string | null
         }
         Returns: Array<AvailabilitySlot>
+      }
+      get_branch_providers: {
+        Args: { p_branch_id: string }
+        Returns: Array<ProviderSummary>
       }
       reserve_slot: {
         Args: {

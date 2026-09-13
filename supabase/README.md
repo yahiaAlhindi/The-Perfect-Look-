@@ -10,6 +10,7 @@ Supabase schema source of truth for The Perfect Look (MVP, task T3).
 | `migrations/004_branches_client_number_pricing.sql` | T37 schema extension — branches, branch hours/closures, staff-branch assignments, branch_access (branch-scoped RLS), service-branch availability/pricing, packages/add-ons, client number, appointment branch + price snapshots, migration mappings |
 | `migrations/005_seed_demo_branches.sql` | T37 idempotent seed + backfill — demo Dubai/Abu Dhabi branches, hours, staff assignments, branch access, service availability, client numbers, appointment snapshots |
 | `migrations/006_availability_engine.sql` | T12 branch-aware availability engine — branch capacity, per-appointment buffer snapshot, DB EXCLUDE overlap boundary, `get_availability()`, atomic `reserve_slot()` |
+| `migrations/007_branch_providers.sql` | T13 provider list for the availability picker — `get_branch_providers()` (active staff assigned to a branch, primary first) |
 | `schema.sql`                     | Consolidated snapshot of the final schema (kept in sync)      |
 | `seed.sql`                       | Idempotent admin-account seed (call `seed_admin()` with your credentials) |
 | `tests/rls_appointments.sql`     | RLS acceptance test (patient isolation, RBAC, SRS §10 enum)   |
