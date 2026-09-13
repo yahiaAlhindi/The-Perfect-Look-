@@ -20,6 +20,12 @@ const PG_ERROR_MAP: Record<string, ErrorEntry> = {
     code: 'VALIDATION_FAILED',
     message: 'Some of the provided details are not valid',
   },
+  // T18: RLS / SECURITY DEFINER guard denials surface as 42501 —
+  // the UI maps them to a clean "not allowed" state.
+  '42501': {
+    code: 'FORBIDDEN',
+    message: 'You do not have permission to perform this action',
+  },
 }
 
 /** Supabase Auth error codes (error.status is set for these). */

@@ -47,6 +47,10 @@
     COMMENT ON TABLE public.availability_parallel_results
         IS 'T12 parallel-slot concurrency proof — one row per concurrent worker attempt.';
 
+    -- T18: handle_new_user() only honours a metadata role while this
+    -- session flag is set — enables the fixture roles below.
+    SELECT set_config('app.rbac_role_change_authorized', 'true', false);
+
     INSERT INTO auth.users (
         instance_id, id, aud, role, email, encrypted_password,
         email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
@@ -59,8 +63,8 @@
            jsonb_build_object('role', r, 'full_name', fn, 'mobile_number', mn),
            now(), now()
     FROM (VALUES
-        ('avparallel.patient@test.local',  'patient', 'AVP Patient',  '+971510000301'),
-        ('avparallel.provider@test.local', 'staff',   'AVP Provider', '+971510000304')
+        ('avparallel.patient@test.local',  'customer', 'AVP Patient',  '+971510000301'),
+        ('avparallel.provider@test.local', 'provider', 'AVP Provider', '+971510000304')
     ) AS v(email, r, fn, mn)
     ON CONFLICT (email) DO NOTHING;
 

@@ -108,6 +108,10 @@ BEGIN
     PERFORM set_config('test.dxb', (SELECT id::text FROM public.branches WHERE slug = 'dubai'), false);
     PERFORM set_config('test.auh', (SELECT id::text FROM public.branches WHERE slug = 'abu-dhabi'), false);
 
+    -- T18: handle_new_user() only honours a metadata role while this
+    -- session flag is set — enables the fixture roles below.
+    PERFORM set_config('app.rbac_role_change_authorized', 'true', false);
+
     -- Auth users + profiles for the test roles
     INSERT INTO auth.users (
         instance_id, id, aud, role, email, encrypted_password,
@@ -121,11 +125,11 @@ BEGIN
            jsonb_build_object('role', r, 'full_name', fn, 'mobile_number', mn),
            now(), now()
     FROM (VALUES
-        ('av.patient@test.local',  'patient', 'AV Patient',   '+971500000301'),
-        ('av.staff@test.local',    'staff',   'AV Staff',     '+971500000302'),
-        ('av.admin@test.local',    'admin',   'AV Admin',     '+971500000303'),
-        ('av.provider@test.local', 'staff',   'AV Provider',  '+971500000304'),
-        ('av.prov2@test.local',    'staff',   'AV Provider2', '+971500000305')
+        ('av.patient@test.local',  'customer', 'AV Patient',   '+971500000301'),
+        ('av.staff@test.local',    'provider', 'AV Staff',     '+971500000302'),
+        ('av.admin@test.local',    'administrator', 'AV Admin',     '+971500000303'),
+        ('av.provider@test.local', 'provider', 'AV Provider',  '+971500000304'),
+        ('av.prov2@test.local',    'provider', 'AV Provider2', '+971500000305')
     ) AS v(email, r, fn, mn);
 
     PERFORM set_config('test.p',   (SELECT id::text FROM public.profiles WHERE email = 'av.patient@test.local'), false);

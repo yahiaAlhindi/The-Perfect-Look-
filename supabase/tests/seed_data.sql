@@ -132,6 +132,8 @@ SELECT public.expect(
 -- 3. DEMO STAFF + WEEKLY AVAILABILITY
 -- ─────────────────────────────────────────────────────────────
 
+-- T18 maps legacy 'staff' accounts onto the SRS §3 roles: by default
+-- provider, refined by title (Lina Khoury → nutritionist).
 SELECT public.expect(
     (SELECT count(*) FROM public.staff s
       JOIN public.profiles p ON p.id = s.profile_id
@@ -139,8 +141,21 @@ SELECT public.expect(
         'demo.staff1@theperfectlook.ae',
         'demo.staff2@theperfectlook.ae',
         'demo.staff3@theperfectlook.ae'
-     ) AND p.role = 'staff') = 3,
-    '3 demo staff accounts exist with staff role'
+     ) AND p.role IN ('provider', 'nutritionist')) = 3,
+    '3 demo staff accounts exist with provider/nutritionist roles'
+);
+
+SELECT public.expect(
+    (SELECT p.role FROM public.profiles p
+      JOIN public.staff s ON s.profile_id = p.id
+     WHERE p.email = 'demo.staff3@theperfectlook.ae') = 'nutritionist'
+    AND (SELECT p.role FROM public.profiles p
+      JOIN public.staff s ON s.profile_id = p.id
+     WHERE p.email = 'demo.staff1@theperfectlook.ae') = 'provider'
+    AND (SELECT p.role FROM public.profiles p
+      JOIN public.staff s ON s.profile_id = p.id
+     WHERE p.email = 'demo.staff2@theperfectlook.ae') = 'provider',
+    'nutritionist title maps to nutritionist; other staff map to provider (T18)'
 );
 
 SELECT public.expect(
@@ -163,6 +178,45 @@ SELECT public.expect(
     EXISTS (SELECT 1 FROM public.holidays WHERE date = '2026-12-02')
     AND EXISTS (SELECT 1 FROM public.holidays WHERE date = '2026-12-25'),
     'demo holidays are seeded (Dec 2 + Dec 25)'
+);
+
+-- ─────────────────────────────────────────────────────────────
+-- 5. T37 SEED — demo branches, client-number format, branch scope
+-- ─────────────────────────────────────────────────────────────
+
+SELECT public.expect(
+    (SELECT count(*) FROM public.branches WHERE slug IN ('dubai', 'abu-dhabi') AND active) = 2,
+    'demo Dubai + Abu Dhabi branches are seeded and active (T37)'
+);
+
+SELECT public.expect(
+    EXISTS (
+        SELECT 1 FROM public.app_settings
+        WHERE key = 'client_number_format'
+          AND value ->> 'prefix' = 'TPL'
+          AND (value ->> 'width')::int = 6
+    )
+    AND EXISTS (
+        SELECT 1 FROM public.app_settings
+        WHERE key = 'default_branch' AND value ->> 'slug' = 'dubai'
+    ),
+    'client_number_format + default_branch app_settings are seeded (T37)'
+);
+
+SELECT public.expect(
+    (SELECT count(*) FROM public.staff_branches) = 3,
+    'each demo staff member is assigned to one branch (T37)'
+);
+
+SELECT public.expect(
+    (SELECT count(*) FROM public.branch_access) = 3,
+    'demo staff hold branch_access grants on their demo branch (T37)'
+);
+
+SELECT public.expect(
+    (SELECT count(*) FROM public.service_branches)
+        = (SELECT count(*) FROM public.services) * (SELECT count(*) FROM public.branches WHERE active),
+    'every service is available at every active branch (T37)'
 );
 
 -- ─────────────────────────────────────────────────────────────

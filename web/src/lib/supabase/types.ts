@@ -1,10 +1,17 @@
 /**
- * Shared TypeScript types for the Supabase schema (T3/T5/T37).
- * Mirrors supabase/migrations/001_schema.sql, 002_auth_profiles.sql,
- * 004_branches_client_number_pricing.sql and 005_seed_demo_branches.sql.
+ * Shared TypeScript types for the Supabase schema (T3/T5/T37/T18).
+ * Mirrors supabase/migrations/001_schema.sql through 007_roles_rbac.sql.
  */
 
-export type UserRole = 'patient' | 'staff' | 'admin'
+export type UserRole =
+  | 'customer'
+  | 'receptionist'
+  | 'branch_manager'
+  | 'provider'
+  | 'nutritionist'
+  | 'finance'
+  | 'administrator'
+  | 'super_admin'
 export type AppointmentStatus =
   | 'Pending'
   | 'Confirmed'
@@ -348,6 +355,38 @@ export interface ClientSearchResult {
   mobile_number: string
 }
 
+// ── T18: staff invitations ──────────────────────────────────
+
+/** Pending staff invitation (T18). Target staff roles only. */
+export interface StaffInvitation {
+  id: string
+  inviter_id: string
+  email: string
+  full_name: string
+  mobile_number: string
+  role: Exclude<
+    UserRole,
+    'customer' | 'administrator' | 'super_admin'
+  >
+  title: string | null
+  branch_ids: string[]
+  code: string
+  expires_at: string
+  accepted: boolean
+  accepted_at: string | null
+  accepted_by: string | null
+  revoked: boolean
+  created_at: string
+}
+
+/** Target roles assignable through an invitation (SRS §3). */
+export type InviteableRole =
+  | 'receptionist'
+  | 'branch_manager'
+  | 'provider'
+  | 'nutritionist'
+  | 'finance'
+
 // ── T12: availability engine ─────────────────────────────────
 
 /**
@@ -417,6 +456,7 @@ export interface Database {
       package_items: { Row: PackageItem }
       service_addons: { Row: ServiceAddon }
       migration_mappings: { Row: MigrationMapping }
+      staff_invitations: { Row: StaffInvitation; Insert: Omit<StaffInvitation, 'id' | 'created_at'>; Update: Partial<Omit<StaffInvitation, 'id'>> }
     }
     Functions: {
       resolve_login_identifier: {
@@ -431,6 +471,30 @@ export interface Database {
         Args: Record<PropertyKey, never>
         Returns: boolean
       }
+      is_staff_role: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      is_super_admin: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      current_role: {
+        Args: Record<PropertyKey, never>
+        Returns: UserRole | null
+      }
+      current_staff_id: {
+        Args: Record<PropertyKey, never>
+        Returns: string | null
+      }
+      can_access_payments: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      can_access_nutrition: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
       can_access_branch: {
         Args: { p_branch_id: string }
         Returns: boolean
@@ -442,6 +506,33 @@ export interface Database {
       search_clients: {
         Args: { p_query: string }
         Returns: Array<ClientSearchResult>
+      }
+      invite_staff: {
+        Args: {
+          email: string
+          full_name: string
+          mobile: string
+          role: InviteableRole
+          branch_ids: string[]
+          title?: string | null
+        }
+        Returns: string
+      }
+      list_invitations: {
+        Args: Record<PropertyKey, never>
+        Returns: Array<StaffInvitation>
+      }
+      revoke_invitation: {
+        Args: { invitation_id: string }
+        Returns: void
+      }
+      accept_invitation: {
+        Args: { code: string; user_id: string }
+        Returns: void
+      }
+      admin_set_user_role: {
+        Args: { user_id: string; role: Exclude<UserRole, 'customer'> }
+        Returns: void
       }
       get_availability: {
         Args: {

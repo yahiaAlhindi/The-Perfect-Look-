@@ -74,6 +74,10 @@ SELECT public.expect(
 PERFORM set_config('test.dxb', (SELECT id::text FROM public.branches WHERE slug = 'dubai'), false);
 PERFORM set_config('test.auh', (SELECT id::text FROM public.branches WHERE slug = 'abu-dhabi'), false);
 
+-- T18: handle_new_user() only honours a metadata role while this
+-- session flag is set — enables the fixture roles below.
+SELECT set_config('app.rbac_role_change_authorized', 'true', false);
+
 -- Auth users + profiles for the test roles
 INSERT INTO auth.users (
     instance_id, id, aud, role, email, encrypted_password,
@@ -87,10 +91,10 @@ SELECT '00000000-0000-0000-0000-000000000000', gen_random_uuid(),
        jsonb_build_object('role', r, 'full_name', fn, 'mobile_number', mn),
        now(), now()
 FROM (VALUES
-    ('mb.patient@test.local',     'patient', 'MB Patient',     '+971500000201'),
-    ('mb.dxb.mgr@test.local',     'staff',   'MB Dubai Mgr',   '+971500000202'),
-    ('mb.abh.mgr@test.local',     'staff',   'MB AbuDhabi Mgr','+971500000203'),
-    ('mb.admin@test.local',       'admin',   'MB Admin',       '+971500000204')
+    ('mb.patient@test.local',     'customer', 'MB Patient',     '+971500000201'),
+    ('mb.dxb.mgr@test.local',     'branch_manager', 'MB Dubai Mgr',   '+971500000202'),
+    ('mb.abh.mgr@test.local',     'branch_manager', 'MB AbuDhabi Mgr','+971500000203'),
+    ('mb.admin@test.local',       'administrator', 'MB Admin',       '+971500000204')
 ) AS v(email, r, fn, mn);
 
 PERFORM set_config('test.p',  (SELECT id::text FROM public.profiles WHERE email = 'mb.patient@test.local'), false);
@@ -191,7 +195,7 @@ INSERT INTO auth.users (
     'authenticated', 'authenticated', 'mb.dup@test.local',
     crypt('Password123!', gen_salt('bf')), now(),
     '{"provider":"email","providers":["email"]}',
-    jsonb_build_object('role', 'patient', 'full_name', 'MB Dup', 'mobile_number', '+971500000205'),
+    jsonb_build_object('role', 'customer', 'full_name', 'MB Dup', 'mobile_number', '+971500000205'),
     now(), now()
 );
 
