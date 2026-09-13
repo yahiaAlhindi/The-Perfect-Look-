@@ -1,7 +1,8 @@
 /**
  * Shared TypeScript types for the Supabase schema (T3/T5/T37).
  * Mirrors supabase/migrations/001_schema.sql, 002_auth_profiles.sql,
- * 004_branches_client_number_pricing.sql and 005_seed_demo_branches.sql.
+ * 004_branches_client_number_pricing.sql, 005_seed_demo_branches.sql,
+ * 009_consents_data_requests.sql and 010_mobile_normalisation.sql.
  */
 
 export type UserRole = 'patient' | 'staff' | 'admin'
@@ -17,6 +18,24 @@ export type NotificationStatus = 'pending' | 'sent' | 'failed' | 'read'
 export type ServiceType = 'service' | 'package' | 'add_on' | 'consultation' | 'membership'
 export type BranchAccessRole = 'viewer' | 'manager'
 
+/** Consent families (SRS §5.1/§17 — required service consents separate from optional marketing). */
+export type ConsentType =
+  | 'terms_of_service'
+  | 'privacy_policy'
+  | 'health_data_disclaimer'
+  | 'nutrition_disclaimer'
+  | 'cancellation_refund_policy'
+  | 'marketing'
+
+/** Customer data-request kinds (SRS §12/§17). */
+export type DataRequestType =
+  | 'export'
+  | 'correction'
+  | 'deletion'
+  | 'consent_withdrawal'
+
+export type DataRequestStatus = 'submitted' | 'in_progress' | 'fulfilled' | 'rejected'
+
 export interface Profile {
   id: string
   full_name: string
@@ -29,6 +48,60 @@ export interface Profile {
   /** Immutable, collision-safe customer number (T37) — null for staff/admin. */
   client_number: string | null
   created_at: string
+}
+
+/**
+ * The editable subset of a profile (T8 allowed field rules).
+ * email / role / id / created_at are NOT in the whitelist — they are
+ * enforced immutable from the self-edit path (see
+ * `enforce_profile_update_fields` trigger in 009_consents_data_requests.sql).
+ */
+export interface ProfileUpdate {
+  full_name?: string
+  mobile_number?: string
+  dob?: string | null
+  gender?: string | null
+  preferred_language?: string
+}
+
+/**
+ * A consent-history event (SRS §5.1/§17). Rows are append-only —
+ * recording a grant or withdrawal inserts a new row; the latest
+ * event per (user_id, consent_type) is the current state.
+ */
+export interface ConsentRecord {
+  id: string
+  user_id: string
+  consent_type: ConsentType
+  version: number
+  granted: boolean
+  created_at: string
+}
+
+export interface ConsentInsert {
+  user_id: string
+  consent_type: ConsentType
+  version?: number
+  granted: boolean
+}
+
+export interface DataRequest {
+  id: string
+  user_id: string
+  request_type: DataRequestType
+  details: Record<string, unknown>
+  status: DataRequestStatus
+  submitted_at: string
+  handled_by: string | null
+  handled_at: string | null
+  response_note: string | null
+  created_at: string
+}
+
+export interface DataRequestInsert {
+  user_id: string
+  request_type: DataRequestType
+  details?: Record<string, unknown>
 }
 
 export interface Service {
@@ -398,7 +471,7 @@ export interface ProviderSummary {
 export interface Database {
   public: {
     Tables: {
-      profiles: { Row: Profile }
+      profiles: { Row: Profile; Update: ProfileUpdate }
       services: { Row: Service; Insert: ServiceInput; Update: ServicePatch }
       staff: { Row: Staff }
       staff_availability: { Row: StaffAvailability }
@@ -408,6 +481,8 @@ export interface Database {
       notifications: { Row: Notification }
       audit_logs: { Row: AuditLog; Insert: AuditLogInsert; Update: Partial<AuditLogInsert> }
       app_settings: { Row: AppSetting }
+      consents: { Row: ConsentRecord; Insert: ConsentInsert }
+      data_requests: { Row: DataRequest; Insert: DataRequestInsert }
       branches: { Row: Branch; Insert: BranchInput; Update: BranchPatch }
       branch_hours: { Row: BranchHours }
       branch_closures: { Row: BranchClosure }
@@ -475,6 +550,9 @@ export interface Database {
       appointment_status: AppointmentStatus
       notification_channel: NotificationChannel
       notification_status: NotificationStatus
+      consent_type: ConsentType
+      data_request_type: DataRequestType
+      data_request_status: DataRequestStatus
       service_type: ServiceType
       branch_access_role: BranchAccessRole
     }

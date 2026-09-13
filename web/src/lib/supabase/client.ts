@@ -32,6 +32,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 export * from './auth'
 export * from './services'
+export * from './profiles'
 export * from './availability'
 export * from './errors'
 export * from './validation'

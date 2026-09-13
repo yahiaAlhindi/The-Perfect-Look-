@@ -12,6 +12,8 @@ Supabase schema source of truth for The Perfect Look (MVP, task T3).
 | `migrations/006_availability_engine.sql` | T12 branch-aware availability engine — branch capacity, per-appointment buffer snapshot, DB EXCLUDE overlap boundary, `get_availability()`, atomic `reserve_slot()` |
 | `migrations/007_branch_providers.sql` | T13 provider list for the availability picker — `get_branch_providers()` (active staff assigned to a branch, primary first) |
 | `migrations/008_appointment_booking_api.sql` | T14 booking-API completion — `appointments.payment_status` (booking-time payment state; T38 owns the full payment domain). The booking API itself is T12's atomic `reserve_slot()` |
+| `migrations/009_consents_data_requests.sql` | T8 profile & consent API — `consents` (versioned/timestamped history), `data_requests`, allowed-field-rules trigger, RLS |
+| `migrations/010_mobile_normalisation.sql` | T8 mobile normalisation fix — leading-zero `05XXXXXXXX` -> `+9715XXXXXXXX` (valid E.164, matches the client normaliser) |
 | `schema.sql`                     | Consolidated snapshot of the final schema (kept in sync)      |
 | `seed.sql`                       | Idempotent admin-account seed (call `seed_admin()` with your credentials) |
 | `tests/rls_appointments.sql`     | RLS acceptance test (patient isolation, RBAC, SRS §10 enum)   |
@@ -24,21 +26,27 @@ Supabase schema source of truth for The Perfect Look (MVP, task T3).
 | `tests/availability_engine_parallel.ps1` | T12 parallel-slot proof driver (Windows) — N concurrent workers, asserts exactly one success |
 | `tests/availability_engine_parallel.sh` | T12 parallel-slot proof driver (POSIX) — same proof as the `.ps1` |
 | `tests/appointment_booking_api.sql` | T14 booking-API acceptance test (full confirmation contract — appointment ID, client number, branch, service, time, payment status; double-booking impossible; inactive/not-offered services rejected; provider/slot rejections; identity auth gate; booking-time price snapshot) |
+| `tests/profile_consent_api.sql`  | T8 profile & consent test (own-profile isolation, allowed field rules, consent history, data requests, anon isolation) |
 
 ## What the schema contains
 
 - `profiles` (synced from `auth.users` via trigger), `services`,
   `staff`, `staff_availability`, `blocked_periods`, `holidays`,
   `appointments` (with human-readable `appointment_ref` like
-  `TPL-20260912-0001`), `notifications`, `audit_logs`, `app_settings`.
+  `TPL-20260912-0001`), `notifications`, `audit_logs`, `app_settings`,
+  `consents` (versioned, append-only consent history), `data_requests`
+  (customer export/correction/deletion/consent-withdrawal queue).
 - Enums: `appointment_status` (SRS §10), `user_role`, `notification_channel`
-  (SRS §15), `notification_status`.
+  (SRS §15), `notification_status`, `consent_type`, `data_request_type`,
+  `data_request_status`.
 - Foreign keys use `ON DELETE RESTRICT`. Unique indexes: email, mobile,
   `appointment_ref`, and a partial unique index that makes double booking
   of the same staff/time impossible at the DB level.
 - Row Level Security enabled on every table. Patients see/own only their
   own rows; staff see all appointments; admins have full access
-  (SRS §17). Self role-escalation is blocked by a trigger.
+  (SRS §17). Self role-escalation is blocked by a trigger; self-edits to
+  `email` / `role` / `id` / `created_at` are refused (T8 allowed field
+  rules). Consents are append-only for API users.
 
 ## Applying locally / to the online project
 
