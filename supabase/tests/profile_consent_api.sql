@@ -2,7 +2,7 @@
 -- The Perfect Look — Profile & consent API acceptance test (T8)
 -- ============================================================
 -- Verifies the T8 server-side guarantees (enforced by RLS + triggers
--- from 001–004 migrations — no client-side trust):
+-- from migrations 001/002/009 — no client-side trust):
 --   1. A customer reads ONLY their own profile (no cross-customer
 --      reads or updates).
 --   2. Allowed field rules: own PUT edits work (mobile normalised),
@@ -17,7 +17,7 @@
 --   6. Sensitive fields (profiles, consents, data_requests) are not
 --      exposed to anon.
 --
--- Requires migrations 001–004 applied.
+-- Requires migrations 001–009 applied (T8 schema lives in 009).
 -- Run against the local db:
 --   supabase start
 --   supabase db reset

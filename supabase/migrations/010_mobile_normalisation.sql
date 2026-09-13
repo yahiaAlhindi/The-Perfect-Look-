@@ -1,7 +1,7 @@
 -- ============================================================
 -- The Perfect Look — T8: E.164 mobile normalisation fix
 -- ============================================================
--- Migration: 005_mobile_normalisation.sql
+-- Migration: 010_mobile_normalisation.sql
 -- Depends on: 002_auth_profiles.sql (T5)
 -- Source: T8 "server-side validation"; SRS v1 §5.1
 --

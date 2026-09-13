@@ -4,7 +4,7 @@
  * versioned consent history, and the data-request entry point.
  *
  * RBAC / isolation enforcement lives on the server via Postgres RLS
- * (supabase/migrations/001–004): customers can only read/update their
+ * (supabase/migrations/001/002/009): customers can only read/update their
  * own row, and sensitive fields are never exposed to anon. These
  * helpers only surface the mapped errors — the client never trusts
  * itself (SRS §17).
@@ -144,7 +144,7 @@ export async function getMyProfile(): Promise<ProfileResult> {
 /**
  * Update the current user's own profile. Only the T8 allowed fields
  * (full_name, mobile_number, dob, gender, preferred_language) are
- * accepted — the trigger in 004_consents_data_requests.sql refuses
+ * accepted — the trigger in 009_consents_data_requests.sql refuses
  * email / role / id / created_at changes server-side.
  *
  * `email` and `role` are intentionally NOT part of `ProfileUpdate`;

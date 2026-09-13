@@ -1,7 +1,7 @@
 -- ============================================================
 -- The Perfect Look — T8: Profile & consent API support
 -- ============================================================
--- Migration: 004_consents_data_requests.sql
+-- Migration: 009_consents_data_requests.sql
 -- Depends on: 001_schema.sql (T3), 002_auth_profiles.sql (T5)
 -- Source: PROJECT_TASKS_BREAKDOWN.md §T8, SRS v1 §5.1/§12/§17
 --

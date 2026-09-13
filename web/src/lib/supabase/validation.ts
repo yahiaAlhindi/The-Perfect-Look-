@@ -1,7 +1,7 @@
 /**
  * API-boundary validation & normalisation (T5/T8).
  * Mirrors the DB rules in supabase/migrations/002_auth_profiles.sql and
- * 004_consents_data_requests.sql: UAE mobile -> E.164, lower-cased
+ * 009_consents_data_requests.sql: UAE mobile -> E.164, lower-cased
  * email, password policy (SRS §5), allowed profile fields (SRS §7),
  * consent types (SRS §5.1/§17) and data-request kinds (SRS §12/§17).
  */

@@ -4,7 +4,7 @@
 -- supabase/schema.sql = the final database schema for the MVP.
 -- This file is the consolidated snapshot of the applied
 -- migrations (supabase/migrations/001_schema.sql through
--- 005_mobile_normalisation.sql).
+-- 010_mobile_normalisation.sql).
 -- Keep it in sync with migrations; migrations are the source
 -- of truth. See docs/PROJECT_TASKS_BREAKDOWN.md task T3 for
 -- acceptance criteria (SRS sections 10, 12, 15, 17, 20).
@@ -565,7 +565,6 @@ CREATE POLICY app_settings_delete_admin
     ON public.app_settings FOR DELETE
     USING (public.is_admin());
 
-
 -- ============================================================
 -- 002_auth_profiles.sql -- migration 002 (T5, auth & profile sync)
 -- ============================================================
@@ -1010,11 +1009,11 @@ VALUES
 ON CONFLICT (date) DO NOTHING;
 
 -- ============================================================
--- 004_consents_data_requests.sql -- migration 004 (T8, profile & consent API)
+-- 009_consents_data_requests.sql -- migration 009 (T8, profile & consent API)
 -- ============================================================
 -- The Perfect Look â€” T8: Profile & consent API support
 -- ============================================================
--- Migration: 004_consents_data_requests.sql
+-- Migration: 009_consents_data_requests.sql
 -- Depends on: 001_schema.sql (T3), 002_auth_profiles.sql (T5)
 -- Source: PROJECT_TASKS_BREAKDOWN.md Â§T8, SRS v1 Â§5.1/Â§12/Â§17
 --
@@ -1233,12 +1232,12 @@ CREATE POLICY data_requests_update_privileged
     WITH CHECK (public.is_staff_or_admin());
 
 -- ============================================================
--- 005_mobile_normalisation.sql -- migration 005 (T8, E.164 fix)
+-- 010_mobile_normalisation.sql -- migration 010 (T8, E.164 fix)
 -- ============================================================
 -- ============================================================
 -- The Perfect Look â€” T8: E.164 mobile normalisation fix
 -- ============================================================
--- Migration: 005_mobile_normalisation.sql
+-- Migration: 010_mobile_normalisation.sql
 -- Depends on: 002_auth_profiles.sql (T5)
 -- Source: T8 "server-side validation"; SRS v1 Â§5.1
 --
@@ -1293,6 +1292,27 @@ BEGIN
 END;
 $$;
 
--- RLS policy functions must be executable by "anon" (see migration 004).
+-- RLS policy functions must be executable by "anon" (see migration 009).
 GRANT EXECUTE ON FUNCTION public.is_admin() TO anon;
 GRANT EXECUTE ON FUNCTION public.is_staff_or_admin() TO anon;
+
+-- ─────────────────────────────────────────────────────────────
+-- T14 — appointment booking API (migration 008)
+-- The transactional booking function is public.reserve_slot()
+-- (T12, migration 006). This snapshot adds the booking-time payment
+-- state the T14 confirmation contract reports.
+-- ─────────────────────────────────────────────────────────────
+
+ALTER TABLE public.appointments
+    ADD COLUMN IF NOT EXISTS payment_status text
+        NOT NULL DEFAULT 'unpaid'
+        CHECK (payment_status IN (
+            'unpaid',
+            'pay_at_clinic',
+            'partially_paid',
+            'paid',
+            'refunded'
+        ));
+
+COMMENT ON COLUMN public.appointments.payment_status IS
+    'Booking-time payment state (T14). Confirmation reports this; T38 introduces the full payment domain (invoices, provider transitions).';

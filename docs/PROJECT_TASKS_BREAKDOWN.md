@@ -231,7 +231,7 @@ scope. These approvals are tracked in T35 and T36.
 - **Acceptance criteria:** RLS prevents cross-customer updates; consent
   records include version and timestamp; sensitive fields are not exposed
   to public queries.
-- **Notes:** Database support in `supabase/migrations/004_consents_data_requests.sql`
+- **Notes:** Database support in `supabase/migrations/009_consents_data_requests.sql`
   (versioned append-only `consents`, `data_requests` queue, allowed-field-rules
   trigger); client API in `web/src/lib/supabase/profiles.ts`; acceptance test in
   `supabase/tests/profile_consent_api.sql`. UI work tracked by T7.
@@ -284,29 +284,76 @@ scope. These approvals are tracked in T35 and T36.
 - **Owner:** Person 1
 - **Priority:** 4
 - **Dependencies:** T3, T4, T9, T37
-- **Status:** Not Started
+- **Status:** Done
 - **Description:** Generate slots from branch hours, service duration and
   buffers, provider schedules, leave, holidays, closures, blocks,
   capacity, and existing appointments. Include branch and timezone in
-  every query.
+  every query. Server-side `reserve_slot()` re-validates the whole
+  availability stack and serialises concurrent requests per provider
+  + branch so exactly one overlapping booking succeeds.
 - **Acceptance criteria:**
   - Slots respect branch/provider rules and Asia/Dubai time.
+    - Verified by `supabase/tests/availability_engine.sql` TEST 1
+      (19 slots in branch hours, times within 10:00–20:00 Asia/Dubai,
+      timezone + branch carried in every row), TEST 3 (leave removes
+      covered slots) and TEST 4 (existing appointment + buffer both
+      remove the right starts).
   - A staff member working at two branches cannot be double-booked.
+    - Verified by TEST 5: Dubai 10:00 booked -> Abu Dhabi 10:00
+      absent from slot list; `reserve_slot()` at Abu Dhabi 10:00
+      rejected; raw INSERT overlapping across branches rejected by the
+      DB `appt_no_overlapping_staff` EXCLUDE constraint; same-start
+      insert at a second branch rejected by the T3 unique index.
   - Parallel requests for one slot result in exactly one successful
     booking.
-- **Notes:** This remains a core concurrency boundary for all channels.
+- Verified by `supabase/tests/availability_engine_parallel_worker.sql`
+      spawned by `.ps1` / `.sh` drivers: N concurrent `reserve_slot()`
+      calls for one slot -> exactly one 'success' in
+      `availability_parallel_results`; DB EXCLUDE constraint and
+      advisory lock provide the boundary across every channel.
+  - Branch capacity (`max_concurrent_appointments`) blocks a second
+    concurrent slot when the limit is reached.
+    - Verified by TEST 6 (capacity 1 -> second provider's 10:00 gone,
+      11:00 open; `reserve_slot()` rejected with the stable message).
+  - Reservation snapshots (price, buffer, client number, service name)
+    are captured at booking time and immune to later catalogue edits.
+    - Verified by TEST 7 (`TPL-` appointment_ref, client_number,
+      service_name_snapshot, price_snapshot, currency_snapshot,
+      buffer_minutes, status Pending).
+  - Authorization: signed-in patient may book only for themselves;
+    anon JWT is rejected.
+    - Verified by TEST 8.
+  - Layout and branch-scope rejections: closed day, outside hours,
+    off-grid start, provider not at branch, missing provider.
+    - Verified by TEST 9 (Sunday, 21:00, 10:15, NULL provider,
+      provider-B-at-abu-dhabi, buffer-service-at-abu-dhabi).
+- **Notes:** Migration 006 extends branches/appointments and adds
+  `get_availability()` + `reserve_slot()`. Typecheck + build pass in
+  `web/`. Run `supabase db reset` then the test suite against the
+  local or online DB to record evidence (see supabase/README.md).
 
 #### T13 - Availability picker UI
 
 - **Owner:** Person 2
 - **Priority:** 4
 - **Dependencies:** T12
-- **Status:** Not Started
+- **Status:** Done
 - **Description:** Build branch -> provider (optional) -> date -> slot
   selection with mobile-friendly day/week navigation and clear
   unavailable states.
 - **Acceptance criteria:** UI matches API availability, carries branch and
   slot into booking, and renders in English/Arabic/RTL.
+- **Notes:** Implemented in branch `t3code/availability-picker-ui`:
+  `web/src/components/AvailabilityPicker.tsx` + `.css` (three-step
+  branch -> optional provider -> date/slot flow; previous/next/today week
+  navigation; day states past/closed/unavailable/limited/available with
+  legend; slots only ever sourced from the T12 `get_availability` RPC;
+  `BookingSelection` passed to the parent). `supabase/migrations/
+  007_branch_providers.sql` adds the `get_branch_providers()` RPC
+  (migration 006 from PR #10 had no provider-list function). Demo wiring
+  in `web/src/App.tsx` (service select, EN/AR + RTL toggle via
+  `web/src/i18n.ts`, booking summary carrying branch/provider/date/time).
+  Frontend verified with `npm run typecheck` + `npm run build`.
 
 ### Milestone D - Appointment booking and lifecycle
 
@@ -315,7 +362,15 @@ scope. These approvals are tracked in T35 and T36.
 - **Owner:** Person 1
 - **Priority:** 5
 - **Dependencies:** T5, T9, T12, T37
-- **Status:** Not Started
+- **Status:** Done
+- **Implemented in:** `supabase/migrations/006_availability_engine.sql` (T12)
+  `public.reserve_slot()` — the transactional booking boundary (server-side
+  re-check of branch, price, service, provider, slot, grid, notice/booking
+  window and customer identity in one atomic statement; snapshots client
+  number, branch, price and buffer; auto-generates `appointment_ref`) — plus
+  `supabase/migrations/008_appointment_booking_api.sql`:
+  `appointments.payment_status` so the confirmation reports payment status.
+  Acceptance test: `supabase/tests/appointment_booking_api.sql` (7 tests).
 - **Description:** Transactional appointment creation with server-side
   re-check of branch, price, service, provider, slot, notice period,
   booking rules, and customer identity. Generate a unique Appointment ID
@@ -647,18 +702,28 @@ scope. These approvals are tracked in T35 and T36.
 - **Owner:** Person 1
 - **Priority:** 1
 - **Dependencies:** T3, T4
-- **Status:** Not Started
+- **Status:** Done
 - **Description:** Add branches, branch hours/closures, staff-branch
   assignments, service-branch availability/pricing, immutable client
   number, branch on appointments, branch-scoped RLS, price snapshots,
   package/add-on relationships, and migration mappings.
 - **Acceptance criteria:**
   - Demo Dubai and Abu Dhabi branches seed idempotently.
+    - Verified by `supabase/tests/multi_branch_pricing_schema.sql` (TEST 6).
   - Client numbers are unique, immutable, collision-safe, searchable,
     and visible through authorized APIs.
+    - Trigger-generated `TPL-######` numbers, unique index, immutability
+      trigger, and `search_clients()` RPC (TEST 1).
   - A user cannot read/write another branch's protected data.
+    - `branch_access`-driven RLS on branches/hours/pricing/appointments;
+      managers scoped to their own branch (TEST 2/4).
   - Appointment and price snapshots preserve historical truth.
+    - `service_name_snapshot`/`price_snapshot`/`client_number` captured
+      at booking and immune to later catalogue edits (TEST 4).
 - **Notes:** Use demo branches until T35/T36 supplies the official data.
+  Migrations 004–005 and the RLS acceptance test are included in the
+  T37 PR; run the test against the local/online project to record
+  evidence (see supabase/README.md).
 
 ### Milestone K - Payments and subscriptions
 

@@ -138,7 +138,7 @@ function mapPostgresError(message: string, original: Error): MappedError {
     }
   }
 
-  // T8 trigger messages (004_consents_data_requests.sql) — allowed
+  // T8 trigger messages (009_consents_data_requests.sql) — allowed
   // field rules and consent immutability surface as friendly errors.
   if (/email cannot be changed/i.test(message)) {
     return {
