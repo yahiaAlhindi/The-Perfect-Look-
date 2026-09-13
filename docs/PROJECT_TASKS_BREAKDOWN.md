@@ -643,18 +643,28 @@ scope. These approvals are tracked in T35 and T36.
 - **Owner:** Person 1
 - **Priority:** 1
 - **Dependencies:** T3, T4
-- **Status:** Not Started
+- **Status:** Done
 - **Description:** Add branches, branch hours/closures, staff-branch
   assignments, service-branch availability/pricing, immutable client
   number, branch on appointments, branch-scoped RLS, price snapshots,
   package/add-on relationships, and migration mappings.
 - **Acceptance criteria:**
   - Demo Dubai and Abu Dhabi branches seed idempotently.
+    - Verified by `supabase/tests/multi_branch_pricing_schema.sql` (TEST 6).
   - Client numbers are unique, immutable, collision-safe, searchable,
     and visible through authorized APIs.
+    - Trigger-generated `TPL-######` numbers, unique index, immutability
+      trigger, and `search_clients()` RPC (TEST 1).
   - A user cannot read/write another branch's protected data.
+    - `branch_access`-driven RLS on branches/hours/pricing/appointments;
+      managers scoped to their own branch (TEST 2/4).
   - Appointment and price snapshots preserve historical truth.
+    - `service_name_snapshot`/`price_snapshot`/`client_number` captured
+      at booking and immune to later catalogue edits (TEST 4).
 - **Notes:** Use demo branches until T35/T36 supplies the official data.
+  Migrations 004–005 and the RLS acceptance test are included in the
+  T37 PR; run the test against the local/online project to record
+  evidence (see supabase/README.md).
 
 ### Milestone K - Payments and subscriptions
 
